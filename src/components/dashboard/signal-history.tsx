@@ -12,7 +12,7 @@ export function SignalHistoryCard() {
 
   return (
     <div className="space-y-4">
-      {historySignals.map((sig) => {
+      {historySignals.slice(0, 3).map((sig) => {
         const isBuy = sig.direction === "BUY";
         const isSell = sig.direction === "SELL";
         

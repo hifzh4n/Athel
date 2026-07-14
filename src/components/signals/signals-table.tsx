@@ -60,7 +60,7 @@ export function SignalsTable() {
               onClick={() => setFilter(f)}
               className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 border ${
                 filter === f
-                  ? "bg-primary text-primary-foreground border-primary/50 shadow-[0_0_10px_var(--primary)]"
+                  ? "bg-primary text-primary-foreground border-primary/50"
                   : "bg-black/20 text-muted-foreground border-white/10 hover:border-white/20 hover:text-foreground"
               }`}
             >

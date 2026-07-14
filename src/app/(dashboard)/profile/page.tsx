@@ -36,10 +36,11 @@ export default function AdminPage() {
       </div>
 
       {/* Stats Row */}
-      <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
+      <div className="grid gap-4 grid-cols-2 lg:grid-cols-5">
         {[
           { label: "Total Signals", value: totalSignals, icon: Activity, color: "text-primary" },
           { label: "Active Now", value: activeSignals.length, icon: Clock, color: "text-primary" },
+          { label: "Win Rate", value: `${winRate}%`, icon: CheckCircle2, color: "text-blue-400" },
           { label: "TP Wins", value: totalTP, icon: TrendingUp, color: "text-emerald-400" },
           { label: "SL Losses", value: totalSL, icon: TrendingDown, color: "text-red-400" },
         ].map((stat) => (
@@ -130,7 +131,7 @@ export default function AdminPage() {
           <p className="text-muted-foreground text-sm">No closed signals yet.</p>
         ) : (
           <div className="space-y-2">
-            {historySignals.slice(0, 8).map((sig) => (
+            {historySignals.slice(0, 5).map((sig) => (
               <div key={sig.id} className="p-3 rounded-lg inset-panel flex items-center justify-between gap-2">
                 <div className="flex items-center gap-3">
                   {sig.status === "COMPLETED_TP" ? (
