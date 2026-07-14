@@ -17,10 +17,11 @@ export function Sidebar({ className = "" }: { className?: string }) {
 
   return (
     <aside className={`flex w-64 flex-col bg-card border-r sticky top-0 h-screen ${className}`}>
-      <div className="h-auto min-h-20 py-4 flex items-start px-6 gap-3 border-b border-border">
-        <img src="/logo.png" alt="Athel Logo" className="w-8 h-8 rounded-md object-contain" />
-        <div className="flex flex-col flex-1 w-full">
-          <h1 className="text-xl font-bold text-primary neon-text tracking-tight font-script">Athel</h1>
+      <div className="h-20 flex items-center px-6 gap-3 border-b border-border shrink-0">
+        <img src="/logo.png" alt="Athel Logo" className="w-8 h-8 rounded-md object-contain shrink-0" />
+        <div className="flex flex-col flex-1 min-w-0 justify-center">
+          <h1 className="text-xl font-bold text-primary neon-text tracking-tight font-script leading-none mt-1">Athel</h1>
+          <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-sans font-medium mt-1 truncate">Trading Engine</span>
         </div>
       </div>
       <nav className="flex-1 p-4 space-y-2">

@@ -28,11 +28,12 @@ export function Header() {
   }, [unlockAudio]);
 
   return (
-    <header className="h-16 md:h-16 flex items-center justify-between px-4 md:px-6 glass border-b sticky top-0 z-40">
+    <header className="h-20 flex items-center justify-between px-4 md:px-6 glass border-b sticky top-0 z-40 shrink-0">
       <div className="md:hidden flex items-center gap-2">
-        <img src="/logo.png" alt="Athel Logo" className="w-7 h-7 rounded object-contain" />
-        <div className="flex flex-col flex-1">
-          <h1 className="text-lg font-bold text-primary tracking-tight neon-text font-script mt-1 leading-none">Athel</h1>
+        <img src="/logo.png" alt="Athel Logo" className="w-7 h-7 rounded object-contain shrink-0" />
+        <div className="flex flex-col flex-1 min-w-0 justify-center">
+          <h1 className="text-lg font-bold text-primary tracking-tight neon-text font-script leading-none mt-1">Athel</h1>
+          <span className="text-[9px] text-muted-foreground uppercase tracking-widest font-sans font-medium mt-1 truncate">Trading Engine</span>
         </div>
       </div>
     </header>
