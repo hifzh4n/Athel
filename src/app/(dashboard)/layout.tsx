@@ -8,7 +8,7 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex h-screen bg-background relative overflow-hidden">
+    <div className="flex h-[100dvh] bg-background relative overflow-hidden w-full">
       {/* Ambient Background Glows */}
       <div className="glow-bg w-[600px] h-[600px] top-[-100px] left-[-100px]" />
       <div className="glow-bg w-[800px] h-[800px] bottom-[-200px] right-[-200px] opacity-10" />

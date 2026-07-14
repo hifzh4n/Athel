@@ -128,11 +128,17 @@
   }
   body {
     @apply bg-background text-foreground;
+    height: 100dvh;
+    overflow: hidden;
+    position: fixed;
+    width: 100%;
   }
   html {
     @apply font-sans;
     scrollbar-width: none;
     -ms-overflow-style: none;
+    height: 100dvh;
+    overflow: hidden;
   }
   html::-webkit-scrollbar, body::-webkit-scrollbar {
     display: none;
