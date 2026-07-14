@@ -280,7 +280,7 @@ def get_gemini_analysis(symbol, direction, price, rsi, macd_hist, mtf_trends, co
     if not api_key:
         return "AI Analysis unavailable."
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
 
     prompt = f"Act as a professional forex trader. A {direction} setup was detected for {symbol} at ${price:.2f}. "
     prompt += f"RSI={rsi:.1f}, MACD Histogram={macd_hist:.4f}. "
