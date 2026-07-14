@@ -40,7 +40,7 @@ def update_signal_status(signal_id, new_status):
     try:
         res = requests.patch(f"{FIREBASE_URL}/signals/{signal_id}.json", json={
             'status': new_status,
-            'updatedAt': datetime.now().isoformat()
+            'updatedAt': datetime.now(timezone.utc).isoformat()
         })
         if res.status_code == 200:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] Signal {signal_id} -> {new_status}")
@@ -57,7 +57,7 @@ def push_live_price(symbol, bid, ask):
                 'price': price,
                 'bid': bid,
                 'ask': ask,
-                'updated_at': datetime.now().isoformat()
+                'updated_at': datetime.now(timezone.utc).isoformat()
             }
         })
     except Exception as e:
@@ -69,7 +69,7 @@ def save_state_to_firebase():
         requests.put(f"{FIREBASE_URL}/engine_state.json", json={
             'last_published_time': last_published_time,
             'last_published_direction': last_published_direction,
-            'updated_at': datetime.now().isoformat()
+            'updated_at': datetime.now(timezone.utc).isoformat()
         })
     except Exception as e:
         print(f"Error saving engine state: {e}")
@@ -545,8 +545,8 @@ def analyze_market(symbol):
         "takeProfit1":  round(take_profit1, 2),
         "takeProfit2":  round(take_profit2, 2),
         "atr":          round(current_atr, 2),
-        "createdAt":    datetime.now().isoformat(),
-        "updatedAt":    datetime.now().isoformat(),
+        "createdAt":    datetime.now(timezone.utc).isoformat(),
+        "updatedAt":    datetime.now(timezone.utc).isoformat(),
         "mtf":          mtf_trends,
         "aiAnalysis":   ai_analysis
     }
