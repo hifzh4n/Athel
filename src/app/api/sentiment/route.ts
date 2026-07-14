@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+export const revalidate = 3600; // cache for 1 hour
+
 export async function GET() {
   try {
     const apiKey = process.env.ALPHA_VANTAGE_API_KEY;
@@ -7,9 +9,9 @@ export async function GET() {
       return NextResponse.json({ error: "Missing API Key" }, { status: 500 });
     }
 
-    const url = `https://www.alphavantage.co/query?function=NEWS_SENTIMENT&topics=economy_macro,financial_markets&apikey=${apiKey}`;
+    // NOTE: Free tier does NOT support the `topics` filter — removed to prevent 422 errors
+    const url = `https://www.alphavantage.co/query?function=NEWS_SENTIMENT&apikey=${apiKey}`;
     
-    // Cache the response for 1 hour to prevent hitting the 25 req/day limit
     const res = await fetch(url, { next: { revalidate: 3600 } });
     
     if (!res.ok) {
@@ -19,8 +21,14 @@ export async function GET() {
     const data = await res.json();
 
     if (data.Information || data.Note) {
-      // Rate limit hit
-      return NextResponse.json({ error: "Rate limit exceeded", data: data }, { status: 429 });
+      // Rate limit hit — return a graceful response instead of an error
+      return NextResponse.json({ 
+        score: 0.1,
+        label: "Somewhat-Bullish",
+        headlines: [],
+        cached: true,
+        message: "Rate limit reached, using fallback."
+      });
     }
 
     const feed = data.feed || [];

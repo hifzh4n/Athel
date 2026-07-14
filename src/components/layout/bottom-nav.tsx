@@ -14,7 +14,7 @@ export function BottomNav() {
   ];
 
   return (
-    <nav className="md:hidden sticky bottom-0 left-0 right-0 z-50 glass border-t border-white/5 pb-safe shrink-0">
+    <nav className="lg:hidden sticky bottom-0 left-0 right-0 z-50 glass border-t border-white/5 pb-safe shrink-0">
       <div className="flex justify-around items-center h-16">
         {navItems.map((item) => {
           const isActive = pathname === item.href;
