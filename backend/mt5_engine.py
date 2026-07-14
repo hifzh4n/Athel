@@ -456,14 +456,21 @@ def analyze_market(symbol):
     # 3. Detect New Setups — 8-factor confluence system
     # ── FIX #5: MACD crossover used instead of raw histogram ─────────────────
     # ── FIX #6: H4 EMA50 trend added as 8th factor ───────────────────────────
+    # ── FIX #6: H4 and H1 EMA50 trends are now MANDATORY FILTERS ─────────────
+    is_macro_bullish = trend_h1 == "BULLISH" and trend_h4 == "BULLISH"
+    is_macro_bearish = trend_h1 == "BEARISH" and trend_h4 == "BEARISH"
+
+    # ── FIX: Pullback Filter (Don't buy the top) ─────────────────────────────
+    # Price must be within 0.8 ATR of the EMA20 to ensure we are entering on a pullback or early crossover.
+    dist_to_ema20 = abs(current_close - current_ema20)
+    is_near_ema20 = dist_to_ema20 <= (current_atr * 0.8)
+
     buy_score = 0
     if current_close > current_ema50: buy_score += 1          # Price above M15 EMA50
     if current_ema20 > current_ema50: buy_score += 1          # EMA20 > EMA50 (bullish structure)
     if 40 < current_rsi < 65:         buy_score += 1          # RSI in healthy buy zone
     if macd_bullish_cross:             buy_score += 1          # MACD just crossed UP (strong signal)
     if trend_m5  == "BULLISH":         buy_score += 1          # M5  micro-trend aligned
-    if trend_h1  == "BULLISH":         buy_score += 1          # H1  mid-trend aligned
-    if trend_h4  == "BULLISH":         buy_score += 1          # H4  macro-trend aligned (new)
     if "Bullish" in sentiment_label:   buy_score += 1          # Macro news aligned
 
     sell_score = 0
@@ -472,19 +479,17 @@ def analyze_market(symbol):
     if 35 < current_rsi < 60:         sell_score += 1
     if macd_bearish_cross:             sell_score += 1          # MACD just crossed DOWN
     if trend_m5  == "BEARISH":         sell_score += 1
-    if trend_h1  == "BEARISH":         sell_score += 1
-    if trend_h4  == "BEARISH":         sell_score += 1          # H4 macro-trend aligned
     if "Bearish" in sentiment_label:   sell_score += 1
 
-    # Requires 5+ out of 8 factors (higher bar = better quality signals)
+    # Require Macro Alignment + Pullback proximity + at least 4/6 micro confluence points
     direction  = "NONE"
     confluences = 0
-    if buy_score >= 5 and sell_score < buy_score:
+    if is_macro_bullish and is_near_ema20 and buy_score >= 4 and sell_score < buy_score:
         direction   = "BUY"
-        confluences = buy_score
-    elif sell_score >= 5 and sell_score > buy_score:
+        confluences = buy_score + 2 # +2 for H1/H4 so UI still shows out of 8
+    elif is_macro_bearish and is_near_ema20 and sell_score >= 4 and sell_score > buy_score:
         direction   = "SELL"
-        confluences = sell_score
+        confluences = sell_score + 2
 
     current_time     = time.time()
     last_time = last_published_time.get(symbol, 0)
@@ -516,13 +521,13 @@ def analyze_market(symbol):
     if direction == "NONE":
         return
 
-    # ── FIX #1 & #4: Dynamic ATR-based SL/TP with minimum 1:1.5 RR ──────────
-    # SL = 1.5x ATR (gives room for normal volatility, not too tight)
-    # TP1 = 2.0x ATR (1:1.33 RR — first target, partial profit)
-    # TP2 = 3.0x ATR (1:2.0 RR  — second target, ride the trend)
-    sl_distance  = round(current_atr * 1.5, 2)
-    tp1_distance = round(current_atr * 2.0, 2)
-    tp2_distance = round(current_atr * 3.0, 2)
+    # ── DYNAMIC SL/TP REWRITE (Wider stops for noise survival) ──────────────
+    # SL = 2.5x ATR (Much safer room for natural pullbacks and market breathing)
+    # TP1 = 2.5x ATR (1:1 RR — first target, partial profit & breakeven)
+    # TP2 = 5.0x ATR (1:2.0 RR — second target, ride the trend)
+    sl_distance  = round(current_atr * 2.5, 2)
+    tp1_distance = round(current_atr * 2.5, 2)
+    tp2_distance = round(current_atr * 5.0, 2)
     entry_price  = current_close
 
     if direction == "BUY":
