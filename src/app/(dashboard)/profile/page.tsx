@@ -6,17 +6,16 @@ import { Badge } from "@/components/ui/badge";
 import { Activity, Power, Server, AlertTriangle, TrendingUp, TrendingDown, CheckCircle2, XCircle, Clock } from "lucide-react";
 
 export default function AdminPage() {
-  const { signals, activeSignals, historySignals, listenToCurrentSignal } = useSignalStore();
+  const { signals, activeSignals, historySignals, listenToCurrentSignal, lastPriceUpdate, listenToLivePrice } = useSignalStore();
 
   useEffect(() => {
     listenToCurrentSignal();
-  }, [listenToCurrentSignal]);
+    listenToLivePrice();
+  }, [listenToCurrentSignal, listenToLivePrice]);
 
-  // Engine status: online if a signal was updated in the last 5 minutes
   const latestSignal = signals[0];
-  const lastUpdate = latestSignal ? new Date(latestSignal.updatedAt).getTime() : 0;
-  const secondsAgo = Math.floor((Date.now() - lastUpdate) / 1000);
-  const isEngineOnline = secondsAgo < 300; // 5 minutes
+  const secondsAgo = Math.floor((Date.now() - (lastPriceUpdate || 0)) / 1000);
+  const isEngineOnline = lastPriceUpdate > 0 && secondsAgo < 120; // 2 minutes
 
   const totalSignals = signals.length;
   const totalTP = signals.filter(s => s.status === "COMPLETED_TP").length;
@@ -74,7 +73,7 @@ export default function AdminPage() {
 
           <div className="space-y-3 flex-1">
             {[
-              { label: "Last Heartbeat", value: lastUpdate ? formatSecondsAgo(secondsAgo) : "Never" },
+              { label: "Last Heartbeat", value: lastPriceUpdate > 0 ? formatSecondsAgo(secondsAgo) : "Never" },
               { label: "Last Signal Time", value: latestSignal ? new Date(latestSignal.updatedAt).toLocaleString() : "—" },
               { label: "Active Tracking", value: `${activeSignals.length} signal(s)`, green: true },
               { label: "Overall Win Rate", value: `${winRate}% (${totalTP}W / ${totalSL}L)`, green: winRate >= 50 },

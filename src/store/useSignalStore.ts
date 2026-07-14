@@ -9,6 +9,7 @@ interface SignalState {
   historySignals: Signal[];
   audioUnlocked: boolean;
   livePrices: Record<string, { price: number; direction: 'up' | 'down' }>;
+  lastPriceUpdate: number;
   unlockAudio: () => void;
   setSignals: (signals: Signal[]) => void;
   listenToCurrentSignal: () => void;
@@ -55,6 +56,7 @@ export const useSignalStore = create<SignalState>((set) => ({
   historySignals: [],
   audioUnlocked: false,
   livePrices: {},
+  lastPriceUpdate: 0,
   unlockAudio: () => {
     unlockAudioContext();
     set({ audioUnlocked: true });
@@ -81,7 +83,17 @@ export const useSignalStore = create<SignalState>((set) => ({
               newPrices[key] = { price: symData.price, direction: newDirection };
             }
           }
-          return { livePrices: newPrices };
+          let maxTime = 0;
+          for (const key in data) {
+            if (data[key].updated_at) {
+              const time = new Date(data[key].updated_at).getTime();
+              if (time > maxTime) maxTime = time;
+            }
+          }
+          return { 
+            livePrices: newPrices, 
+            lastPriceUpdate: maxTime > 0 ? maxTime : state.lastPriceUpdate 
+          };
         });
       }
     });
