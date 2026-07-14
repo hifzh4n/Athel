@@ -215,7 +215,7 @@ def is_valid_trading_session(symbol):
     now_utc = datetime.now(timezone.utc)
     hour = now_utc.hour
 
-    in_asia   = 0 <= hour < 7    # Tokyo session
+    in_asia   = hour >= 22 or 0 <= hour < 7    # Sydney/Tokyo session
     in_london = 7 <= hour < 13   # London session
     in_ny     = 13 <= hour < 20  # New York session
 
