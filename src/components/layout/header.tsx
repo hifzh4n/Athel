@@ -28,7 +28,7 @@ export function Header() {
   }, [unlockAudio]);
 
   return (
-    <header className="h-20 flex items-center justify-between px-4 md:px-6 glass border-b sticky top-0 z-40 shrink-0">
+    <header className="h-[calc(5rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] flex items-center justify-between px-4 md:px-6 glass border-b sticky top-0 z-40 shrink-0">
       <div className="md:hidden flex items-center gap-2">
         <img src="/logo.png" alt="Athel Logo" className="w-7 h-7 rounded object-contain shrink-0" />
         <div className="flex flex-col flex-1 min-w-0 justify-center">
