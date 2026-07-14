@@ -18,6 +18,15 @@ const petitFormal = Petit_Formal_Script({
 export const metadata: Metadata = {
   title: "Athel | Where precision meets execution.",
   description: "Where precision meets execution.",
+  icons: {
+    icon: "/logo.png",
+    apple: "/logo.png",
+  },
+  appleWebApp: {
+    title: "Athel",
+    statusBarStyle: "black-translucent",
+    capable: true,
+  },
 };
 
 export const viewport: Viewport = {
