@@ -388,26 +388,31 @@ def analyze_market(symbol="XAUUSD.c"):
         print(f"   -> ATR={current_atr:.2f} outside safe range [{ATR_MIN}-{ATR_MAX}]. Skipping.")
         return
 
-    # 2. Track active signals against TP/SL
-    for sig_id, sig_data in list(active_signals.items()):
-        direction = sig_data['direction']
-        status = "ACTIVE"
-        if direction == "BUY":
-            if current_close >= sig_data['takeProfit1']:
-                status = "COMPLETED_TP"
-            elif current_close <= sig_data['stopLoss']:
-                status = "COMPLETED_SL"
-        elif direction == "SELL":
-            if current_close <= sig_data['takeProfit1']:
-                status = "COMPLETED_TP"
-            elif current_close >= sig_data['stopLoss']:
-                status = "COMPLETED_SL"
+    current_live_price = None
+    if tick:
+        current_live_price = (tick.bid + tick.ask) / 2
 
-        if status != "ACTIVE":
-            update_signal_status(sig_id, status)
-            del active_signals[sig_id]
-            emoji = "✅" if status == "COMPLETED_TP" else "❌"
-            send_telegram_message(f"{emoji} *TRADE CLOSED* {emoji}\n\nSymbol: *{sig_data.get('symbol', symbol)}*\nDirection: *{direction}*\nResult: *{status}*\nClose Price: {current_close:.2f}")
+    # 2. Track active signals against TP/SL
+    if current_live_price is not None:
+        for sig_id, sig_data in list(active_signals.items()):
+            direction = sig_data['direction']
+            status = "ACTIVE"
+            if direction == "BUY":
+                if current_live_price >= sig_data['takeProfit1']:
+                    status = "COMPLETED_TP"
+                elif current_live_price <= sig_data['stopLoss']:
+                    status = "COMPLETED_SL"
+            elif direction == "SELL":
+                if current_live_price <= sig_data['takeProfit1']:
+                    status = "COMPLETED_TP"
+                elif current_live_price >= sig_data['stopLoss']:
+                    status = "COMPLETED_SL"
+
+            if status != "ACTIVE":
+                update_signal_status(sig_id, status)
+                del active_signals[sig_id]
+                emoji = "✅" if status == "COMPLETED_TP" else "❌"
+                send_telegram_message(f"{emoji} *TRADE CLOSED* {emoji}\n\nSymbol: *{sig_data.get('symbol', symbol)}*\nDirection: *{direction}*\nResult: *{status}*\nClose Price: {current_live_price:.2f}")
 
     # Fetch AV sentiment BEFORE calculating confluences so the math can use it
     av_sentiment   = get_alpha_vantage_sentiment()
@@ -546,7 +551,8 @@ if __name__ == "__main__":
     consecutive_errors = 0
     while True:
         try:
-            analyze_market("XAUUSD.c")
+            target_symbol = os.getenv("SYMBOL", "XAUUSD")
+            analyze_market(target_symbol)
             consecutive_errors = 0
             time.sleep(5)
         except KeyboardInterrupt:
