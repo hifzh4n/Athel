@@ -280,8 +280,6 @@ def get_gemini_analysis(symbol, direction, price, rsi, macd_hist, mtf_trends, co
     if not api_key:
         return "AI Analysis unavailable."
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={api_key}"
-
     prompt = f"Act as a professional forex trader. A {direction} setup was detected for {symbol} at ${price:.2f}. "
     prompt += f"RSI={rsi:.1f}, MACD Histogram={macd_hist:.4f}. "
     prompt += f"Timeframe trends: M5={mtf_trends['M5']}, M15={mtf_trends['M15']}, H1={mtf_trends['H1']}, H4={mtf_trends['H4']}. "
@@ -295,16 +293,23 @@ def get_gemini_analysis(symbol, direction, price, rsi, macd_hist, mtf_trends, co
     prompt += "Write 2 concise sentences explaining why this is a high-probability setup. Plain text only, no bullet points or markdown."
 
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
-    try:
-        res = requests.post(url, json=payload, timeout=10)
-        if res.status_code == 200:
-            return res.json()['candidates'][0]['content']['parts'][0]['text'].strip()
-        else:
-            print("Gemini API Error:", res.text[:200])
-            return "AI Analysis generation failed."
-    except Exception as e:
-        print("Gemini API Exception:", e)
-        return "AI Analysis generation failed."
+    models_to_try = [
+        "gemini-1.5-flash",
+        "gemini-2.0-flash-exp",
+        "gemini-pro",
+        "gemini-1.0-pro"
+    ]
+    
+    for model in models_to_try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        try:
+            res = requests.post(url, json=payload, timeout=10)
+            if res.status_code == 200:
+                return res.json()['candidates'][0]['content']['parts'][0]['text'].strip()
+        except Exception:
+            continue
+            
+    return "AI Analysis temporarily unavailable. (Check API Key)"
 
 # ─── Dynamic Confidence & RR ───────────────────────────────────────────────────
 
