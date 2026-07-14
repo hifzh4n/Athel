@@ -14,9 +14,9 @@ export default function DashboardLayout({
       <div className="glow-bg w-[800px] h-[800px] bottom-[-200px] right-[-200px] opacity-10" />
       
       <Sidebar className="hidden md:flex glass-panel z-10" />
-      <div className="flex flex-col flex-1 min-w-0 pb-16 md:pb-0 relative z-10">
+      <div className="flex flex-col flex-1 min-w-0 relative z-10">
         <Header />
-        <main className="flex-1 p-4 md:p-6 pb-24 md:pb-6 overflow-y-auto overflow-x-hidden overscroll-y-contain no-scrollbar">
+        <main className="flex-1 p-4 md:p-6 overflow-y-auto overflow-x-hidden overscroll-y-contain no-scrollbar">
           {children}
         </main>
         <BottomNav />
