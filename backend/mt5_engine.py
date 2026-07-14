@@ -389,14 +389,14 @@ def analyze_market(symbol):
     trend_h4  = "BULLISH" if float(df_h4['close'].iloc[IDX])  > float(df_h4['ema50'].iloc[IDX])  else "BEARISH"
     mtf_trends = {"M5": trend_m5, "M15": trend_m15, "H1": trend_h1, "H4": trend_h4}
 
-    # M15 Indicators — based on CLOSED candle
-    df_m15['ema20'] = ta.ema(df_m15['close'], length=20)
-    df_m15['rsi']   = ta.rsi(df_m15['close'], length=14)
-    macd_df         = ta.macd(df_m15['close'], fast=12, slow=26, signal=9)
+    # M5 Indicators (Fast Scalping) — based on CLOSED candle
+    df_m5['ema20'] = ta.ema(df_m5['close'], length=20)
+    df_m5['rsi']   = ta.rsi(df_m5['close'], length=14)
+    macd_df         = ta.macd(df_m5['close'], fast=12, slow=26, signal=9)
 
     # ── FIX #1: ATR for dynamic SL/TP ────────────────────────────────────────
-    df_m15['atr'] = ta.atr(df_m15['high'], df_m15['low'], df_m15['close'], length=14)
-    current_atr   = float(df_m15['atr'].iloc[IDX])
+    df_m5['atr'] = ta.atr(df_m5['high'], df_m5['low'], df_m5['close'], length=14)
+    current_atr   = float(df_m5['atr'].iloc[IDX])
 
     # ── FIX #5: True MACD CROSSOVER detection (not just value) ───────────────
     macd_hist_prev    = float(macd_df.iloc[-3, 1])  # 2 candles ago
@@ -404,10 +404,10 @@ def analyze_market(symbol):
     macd_bullish_cross = macd_hist_prev <= 0 and macd_hist_closed > 0  # crossed UP
     macd_bearish_cross = macd_hist_prev >= 0 and macd_hist_closed < 0  # crossed DOWN
 
-    current_close  = float(df_m15['close'].iloc[IDX])
-    current_ema20  = float(df_m15['ema20'].iloc[IDX])
-    current_ema50  = float(df_m15['ema50'].iloc[IDX])
-    current_rsi    = float(df_m15['rsi'].iloc[IDX])
+    current_close  = float(df_m5['close'].iloc[IDX])
+    current_ema20  = float(df_m5['ema20'].iloc[IDX])
+    current_ema50  = float(df_m5['ema50'].iloc[IDX])
+    current_rsi    = float(df_m5['rsi'].iloc[IDX])
 
     # ── FIX #7: Volatility Filter ─────────────────────────────────────────────
     # ATR too low = dead market (wide spread eats profit)
@@ -456,9 +456,9 @@ def analyze_market(symbol):
     # 3. Detect New Setups — 8-factor confluence system
     # ── FIX #5: MACD crossover used instead of raw histogram ─────────────────
     # ── FIX #6: H4 EMA50 trend added as 8th factor ───────────────────────────
-    # ── FIX #6: H4 and H1 EMA50 trends are now MANDATORY FILTERS ─────────────
-    is_macro_bullish = trend_h1 == "BULLISH" and trend_h4 == "BULLISH"
-    is_macro_bearish = trend_h1 == "BEARISH" and trend_h4 == "BEARISH"
+    # ── SCALPING FILTER: Only require H1 macro alignment (removed H4) ────────
+    is_macro_bullish = trend_h1 == "BULLISH"
+    is_macro_bearish = trend_h1 == "BEARISH"
 
     # ── FIX: Pullback Filter (Don't buy the top) ─────────────────────────────
     # Price must be within 0.8 ATR of the EMA20 to ensure we are entering on a pullback or early crossover.
@@ -521,13 +521,13 @@ def analyze_market(symbol):
     if direction == "NONE":
         return
 
-    # ── DYNAMIC SL/TP REWRITE (Wider stops for noise survival) ──────────────
-    # SL = 2.5x ATR (Much safer room for natural pullbacks and market breathing)
-    # TP1 = 2.5x ATR (1:1 RR — first target, partial profit & breakeven)
-    # TP2 = 5.0x ATR (1:2.0 RR — second target, ride the trend)
-    sl_distance  = round(current_atr * 2.5, 2)
-    tp1_distance = round(current_atr * 2.5, 2)
-    tp2_distance = round(current_atr * 5.0, 2)
+    # ── SCALPING SL/TP REWRITE (Fast closes, tighter stops) ──────────────
+    # SL = 1.2x ATR (Very tight, stops out fast on noise)
+    # TP1 = 1.5x ATR (Quick partial profit)
+    # TP2 = 3.0x ATR (Scalping runner)
+    sl_distance  = round(current_atr * 1.2, 2)
+    tp1_distance = round(current_atr * 1.5, 2)
+    tp2_distance = round(current_atr * 3.0, 2)
     entry_price  = current_close
 
     if direction == "BUY":
