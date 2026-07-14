@@ -104,6 +104,18 @@ def load_active_signals():
                 if val.get('status') == 'ACTIVE':
                     active_signals[key] = val
                     count += 1
+                    # ── FIX: Restore cooldown from active signal's createdAt so
+                    #         restarting the engine doesn't immediately fire a new signal.
+                    sym = val.get('symbol', '')
+                    try:
+                        created = val.get('createdAt', '')
+                        created_ts = datetime.fromisoformat(created).timestamp()
+                        # Only update if this is more recent than what we have
+                        if created_ts > last_published_time.get(sym, 0):
+                            last_published_time[sym] = created_ts
+                            last_published_direction[sym] = val.get('direction', 'NONE')
+                    except Exception:
+                        pass
             if count > 0:
                 print(f"Resumed tracking {count} active signal(s) from Firebase.")
     except Exception as e:
@@ -488,15 +500,15 @@ def analyze_market(symbol):
         print(f"   -> [{symbol}] Cooldown: {cooldown_remaining}s remaining")
         return
 
-    # Check if there is already an ACTIVE signal of the same direction
-    has_active_same_direction = any(
-        s.get('direction') == direction and s.get('symbol') == symbol for s in active_signals.values()
+    # ── GATE: Block ANY new signal if this symbol already has an active signal ──
+    has_active_for_symbol = any(
+        s.get('symbol') == symbol for s in active_signals.values()
     )
-    if direction != "NONE" and has_active_same_direction:
-        print(f"   -> [{symbol}] Skipping duplicate {direction} signal (Already ACTIVE)")
+    if direction != "NONE" and has_active_for_symbol:
+        print(f"   -> [{symbol}] Skipping: already has an ACTIVE signal. Waiting for TP/SL.")
         return
 
-    # Skip if same direction as last signal (deduplication after cooldown)
+    # Skip if same direction as last signal after cooldown (deduplication)
     if direction != "NONE" and direction == last_dir and cooldown_remaining == 0:
         print(f"   -> [{symbol}] Skipping duplicate {direction} signal (same as last)")
         return
