@@ -16,10 +16,10 @@ FIREBASE_URL = "https://tradingview-c3839-default-rtdb.asia-southeast1.firebased
 active_signals = {}
 
 # Cooldown tracking - persisted to Firebase so restarts don't bypass it
-last_published_time = 0
+last_published_time = {}
 
 # Track last published direction to prevent duplicate same-direction signals
-last_published_direction = "NONE"
+last_published_direction = {}
 
 # ─── Firebase Helpers ──────────────────────────────────────────────────────────
 
@@ -50,22 +50,25 @@ def update_signal_status(signal_id, new_status):
 def push_live_price(symbol, bid, ask):
     try:
         price = round((bid + ask) / 2, 2)
-        requests.put(f"{FIREBASE_URL}/live_price.json", json={
-            'symbol': symbol,
-            'price': price,
-            'bid': bid,
-            'ask': ask,
-            'updated_at': datetime.now().isoformat()
+        safe_symbol = symbol.replace(".", "_").replace("#", "_").replace("$", "_").replace("[", "_").replace("]", "_")
+        requests.patch(f"{FIREBASE_URL}/live_prices.json", json={
+            safe_symbol: {
+                'symbol': symbol,
+                'price': price,
+                'bid': bid,
+                'ask': ask,
+                'updated_at': datetime.now().isoformat()
+            }
         })
     except Exception as e:
         pass
 
-def save_state_to_firebase(last_time, last_direction):
+def save_state_to_firebase():
     """Persist the cooldown state so restarts don't reset it."""
     try:
-        requests.patch(f"{FIREBASE_URL}/engine_state.json", json={
-            'last_published_time': last_time,
-            'last_published_direction': last_direction,
+        requests.put(f"{FIREBASE_URL}/engine_state.json", json={
+            'last_published_time': last_published_time,
+            'last_published_direction': last_published_direction,
             'updated_at': datetime.now().isoformat()
         })
     except Exception as e:
@@ -78,9 +81,14 @@ def load_state_from_firebase():
         res = requests.get(f"{FIREBASE_URL}/engine_state.json")
         if res.status_code == 200 and res.json():
             data = res.json()
-            last_published_time = data.get('last_published_time', 0)
-            last_published_direction = data.get('last_published_direction', 'NONE')
-            print(f"Restored engine state: last_published={last_published_direction}, {int(time.time() - last_published_time)}s ago")
+            # Handle migration from old integer format to dict
+            if isinstance(data.get('last_published_time'), dict):
+                last_published_time = data.get('last_published_time', {})
+                last_published_direction = data.get('last_published_direction', {})
+            else:
+                last_published_time = {}
+                last_published_direction = {}
+            print(f"Restored engine state for {len(last_published_time)} symbols.")
     except Exception as e:
         print(f"Error loading engine state: {e}")
 
@@ -180,7 +188,7 @@ def get_data(symbol, timeframe, num_candles):
 
 # ─── FIX #3: Session Filter ────────────────────────────────────────────────────
 
-def is_valid_trading_session():
+def is_valid_trading_session(symbol):
     """
     Trade during all three major sessions:
       - Asia / Tokyo  : 00:00 – 07:00 UTC  (Gold reacts to Asian demand & JPY moves)
@@ -188,6 +196,10 @@ def is_valid_trading_session():
       - New York      : 13:00 – 20:00 UTC  (USD data, Fed news)
     Dead zone blocked: 20:00 – 00:00 UTC (post-NY close, very thin liquidity).
     """
+    # Synthetic indices run 24/7
+    if any(keyword in symbol for keyword in ["Vol", "Volatility", "Step", "Crash", "Boom", "Jump"]):
+        return True
+
     now_utc = datetime.now(timezone.utc)
     hour = now_utc.hour
 
@@ -205,7 +217,7 @@ def is_valid_trading_session():
         session_name = "Dead Zone"
 
     if not in_session:
-        print(f"   -> [{now_utc.strftime('%H:%M')} UTC] {session_name} — outside all sessions. Waiting for Asia open (00:00 UTC).")
+        print(f"   -> [{symbol}] [{now_utc.strftime('%H:%M')} UTC] {session_name} — outside all sessions. Waiting for Asia open.")
     return in_session
 
 # ─── Alpha Vantage ─────────────────────────────────────────────────────────────
@@ -321,7 +333,7 @@ def calculate_rr(entry, sl, tp1):
 
 # ─── Core Analysis ─────────────────────────────────────────────────────────────
 
-def analyze_market(symbol="XAUUSD.c"):
+def analyze_market(symbol):
     global last_published_time, last_published_direction, active_signals
 
     # Fetch live price every cycle to update the UI
@@ -330,7 +342,7 @@ def analyze_market(symbol="XAUUSD.c"):
         push_live_price(symbol, tick.bid, tick.ask)
 
     # ── FIX #3: Session Gate ─────────────────────────────────────────────────
-    if not is_valid_trading_session():
+    if not is_valid_trading_session(symbol):
         return
 
     # 1. Fetch Multi-Timeframe Data (including H4 for FIX #6)
@@ -395,6 +407,9 @@ def analyze_market(symbol="XAUUSD.c"):
     # 2. Track active signals against TP/SL
     if current_live_price is not None:
         for sig_id, sig_data in list(active_signals.items()):
+            if sig_data.get('symbol') != symbol:
+                continue
+            
             direction = sig_data['direction']
             status = "ACTIVE"
             if direction == "BUY":
@@ -452,27 +467,30 @@ def analyze_market(symbol="XAUUSD.c"):
         confluences = sell_score
 
     current_time     = time.time()
-    time_since_last  = current_time - last_published_time
+    last_time = last_published_time.get(symbol, 0)
+    last_dir = last_published_direction.get(symbol, "NONE")
+    
+    time_since_last  = current_time - last_time
     cooldown_remaining = max(0, int(900 - time_since_last))
 
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {current_close:.2f} | ATR:{current_atr:.1f} | MTF:{trend_m5[0]}/{trend_m15[0]}/{trend_h1[0]}/{trend_h4[0]} | RSI:{current_rsi:.1f} | MACD_X:{'B' if macd_bullish_cross else ('S' if macd_bearish_cross else '-')} | BUY:{buy_score}/8 SELL:{sell_score}/8 -> {direction}")
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] {symbol}: {current_close:.2f} | ATR:{current_atr:.1f} | MTF:{trend_m5[0]}/{trend_m15[0]}/{trend_h1[0]}/{trend_h4[0]} | RSI:{current_rsi:.1f} | MACD_X:{'B' if macd_bullish_cross else ('S' if macd_bearish_cross else '-')} | BUY:{buy_score}/8 SELL:{sell_score}/8 -> {direction}")
 
     # Skip if cooldown active
     if direction != "NONE" and cooldown_remaining > 0:
-        print(f"   -> Cooldown: {cooldown_remaining}s remaining")
+        print(f"   -> [{symbol}] Cooldown: {cooldown_remaining}s remaining")
         return
 
     # Check if there is already an ACTIVE signal of the same direction
     has_active_same_direction = any(
-        s.get('direction') == direction for s in active_signals.values()
+        s.get('direction') == direction and s.get('symbol') == symbol for s in active_signals.values()
     )
     if direction != "NONE" and has_active_same_direction:
-        print(f"   -> Skipping duplicate {direction} signal (Already ACTIVE)")
+        print(f"   -> [{symbol}] Skipping duplicate {direction} signal (Already ACTIVE)")
         return
 
     # Skip if same direction as last signal (deduplication after cooldown)
-    if direction != "NONE" and direction == last_published_direction and cooldown_remaining == 0:
-        print(f"   -> Skipping duplicate {direction} signal (same as last)")
+    if direction != "NONE" and direction == last_dir and cooldown_remaining == 0:
+        print(f"   -> [{symbol}] Skipping duplicate {direction} signal (same as last)")
         return
 
     if direction == "NONE":
@@ -528,9 +546,9 @@ def analyze_market(symbol="XAUUSD.c"):
     sig_id = push_to_firebase(signal_payload)
     if sig_id:
         active_signals[sig_id] = signal_payload
-        last_published_time     = current_time
-        last_published_direction = direction
-        save_state_to_firebase(last_published_time, last_published_direction)
+        last_published_time[symbol] = current_time
+        last_published_direction[symbol] = direction
+        save_state_to_firebase()
 
         msg  = f"🚨 *NEW SETUP DETECTED* 🚨\n\n"
         msg += f"Symbol: *{symbol}*  |  Direction: *{direction}*\n"
@@ -551,8 +569,9 @@ if __name__ == "__main__":
     consecutive_errors = 0
     while True:
         try:
-            target_symbol = os.getenv("SYMBOL", "XAUUSD")
-            analyze_market(target_symbol)
+            target_symbols = os.getenv("SYMBOLS", "XAUUSD").split(",")
+            for sym in target_symbols:
+                analyze_market(sym.strip())
             consecutive_errors = 0
             time.sleep(5)
         except KeyboardInterrupt:

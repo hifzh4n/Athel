@@ -9,30 +9,31 @@ import { useEffect } from "react";
 
 export function Sidebar({ className = "" }: { className?: string }) {
   const pathname = usePathname();
-  const { livePrice, priceDirection, listenToLivePrice } = useSignalStore();
+  const { livePrices, listenToLivePrice } = useSignalStore();
 
   useEffect(() => {
     listenToLivePrice();
   }, [listenToLivePrice]);
 
-  const colorClass = priceDirection === 'down' ? 'text-red-400' : 'text-emerald-400';
-  const bgClass = priceDirection === 'down' ? 'bg-red-400' : 'bg-emerald-400';
-
   return (
     <aside className={`flex w-64 flex-col bg-card border-r sticky top-0 h-screen ${className}`}>
-      <div className="h-20 flex items-center px-6 gap-3 border-b border-border">
+      <div className="h-auto min-h-20 py-4 flex items-start px-6 gap-3 border-b border-border">
         <img src="/logo.png" alt="Athel Logo" className="w-8 h-8 rounded-md object-contain" />
-        <div className="flex flex-col">
+        <div className="flex flex-col flex-1 w-full">
           <h1 className="text-xl font-bold text-primary neon-text tracking-tight font-script">Athel</h1>
-          <div className="flex items-baseline gap-1.5 -mt-1">
-            <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-sans font-medium">XAUUSD</span>
-            {livePrice ? (
-              <span className={`text-[10px] ${colorClass} font-mono font-bold flex items-baseline gap-1 transition-colors duration-300`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${bgClass} animate-pulse self-center transition-colors duration-300`}></span>
-                {livePrice.toFixed(2)}
-              </span>
+          <div className="flex flex-col gap-1 mt-1">
+            {Object.keys(livePrices).length > 0 ? (
+              Object.entries(livePrices).map(([safeSymbol, data]) => (
+                <div key={safeSymbol} className="flex items-baseline justify-between gap-2 border-b border-border/50 pb-1 last:border-0 last:pb-0">
+                  <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-sans font-medium">{safeSymbol.replace(/_/g, " ")}</span>
+                  <span className={`text-[10px] ${data.direction === 'down' ? 'text-red-400' : 'text-emerald-400'} font-mono font-bold flex items-baseline gap-1 transition-colors duration-300`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${data.direction === 'down' ? 'bg-red-400' : 'bg-emerald-400'} animate-pulse self-center transition-colors duration-300`}></span>
+                    {data.price.toFixed(2)}
+                  </span>
+                </div>
+              ))
             ) : (
-              <span className="text-[10px] text-muted-foreground font-mono">...</span>
+              <span className="text-[10px] text-muted-foreground font-mono">Loading prices...</span>
             )}
           </div>
         </div>

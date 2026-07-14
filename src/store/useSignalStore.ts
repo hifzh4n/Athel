@@ -8,8 +8,7 @@ interface SignalState {
   activeSignals: Signal[];
   historySignals: Signal[];
   audioUnlocked: boolean;
-  livePrice: number | null;
-  priceDirection: 'up' | 'down';
+  livePrices: Record<string, { price: number; direction: 'up' | 'down' }>;
   unlockAudio: () => void;
   setSignals: (signals: Signal[]) => void;
   listenToCurrentSignal: () => void;
@@ -55,8 +54,7 @@ export const useSignalStore = create<SignalState>((set) => ({
   activeSignals: [],
   historySignals: [],
   audioUnlocked: false,
-  livePrice: null,
-  priceDirection: 'up',
+  livePrices: {},
   unlockAudio: () => {
     unlockAudioContext();
     set({ audioUnlocked: true });
@@ -65,17 +63,25 @@ export const useSignalStore = create<SignalState>((set) => ({
   listenToLivePrice: () => {
     if (isListeningToPrice) return;
     isListeningToPrice = true;
-    const livePriceRef = ref(realtimeDb, 'live_price');
+    const livePriceRef = ref(realtimeDb, 'live_prices');
     onValue(livePriceRef, (snapshot) => {
       const data = snapshot.val();
-      if (data && data.price) {
+      if (data) {
         set((state) => {
-          let newDirection = state.priceDirection;
-          if (state.livePrice !== null) {
-            if (data.price > state.livePrice) newDirection = 'up';
-            else if (data.price < state.livePrice) newDirection = 'down';
+          const newPrices = { ...state.livePrices };
+          for (const key in data) {
+            const symData = data[key];
+            if (symData && symData.price) {
+              const oldPrice = newPrices[key]?.price;
+              let newDirection: 'up' | 'down' = newPrices[key]?.direction || 'up';
+              if (oldPrice !== undefined) {
+                if (symData.price > oldPrice) newDirection = 'up';
+                else if (symData.price < oldPrice) newDirection = 'down';
+              }
+              newPrices[key] = { price: symData.price, direction: newDirection };
+            }
           }
-          return { livePrice: data.price, priceDirection: newDirection };
+          return { livePrices: newPrices };
         });
       }
     });
