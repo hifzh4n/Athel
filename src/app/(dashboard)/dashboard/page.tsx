@@ -3,6 +3,7 @@ import { SignalHistoryCard } from "@/components/dashboard/signal-history";
 import { MTFCard } from "@/components/dashboard/mtf-card";
 import { AIAnalysisCard } from "@/components/dashboard/ai-analysis-card";
 import { MarketSentimentCard } from "@/components/dashboard/market-sentiment-card";
+import { LivePricesGrid } from "@/components/dashboard/live-prices-grid";
 import { Sparkles, Globe } from "lucide-react";
 
 export default function DashboardPage() {
@@ -11,6 +12,8 @@ export default function DashboardPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
       </div>
+      
+      <LivePricesGrid />
       
       <div className="space-y-4">
         <h2 className="text-xl font-semibold tracking-tight">Active Setups</h2>
