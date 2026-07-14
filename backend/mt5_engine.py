@@ -393,6 +393,9 @@ def analyze_market(symbol):
     df_m5['ema20'] = ta.ema(df_m5['close'], length=20)
     df_m5['rsi']   = ta.rsi(df_m5['close'], length=14)
     macd_df         = ta.macd(df_m5['close'], fast=12, slow=26, signal=9)
+    
+    # ── SUPERTREND (10, 3.0) ──────────────────────────────────────────────────
+    st_df = ta.supertrend(df_m5['high'], df_m5['low'], df_m5['close'], length=10, multiplier=3.0)
 
     # ── FIX #1: ATR for dynamic SL/TP ────────────────────────────────────────
     df_m5['atr'] = ta.atr(df_m5['high'], df_m5['low'], df_m5['close'], length=14)
@@ -408,6 +411,7 @@ def analyze_market(symbol):
     current_ema20  = float(df_m5['ema20'].iloc[IDX])
     current_ema50  = float(df_m5['ema50'].iloc[IDX])
     current_rsi    = float(df_m5['rsi'].iloc[IDX])
+    current_st_dir = float(st_df.iloc[IDX, 1]) # Column 1 is Direction (1 or -1)
 
     # ── FIX #7: Volatility Filter ─────────────────────────────────────────────
     # ATR too low = dead market (wide spread eats profit)
@@ -460,13 +464,17 @@ def analyze_market(symbol):
     is_macro_bullish = trend_h1 == "BULLISH"
     is_macro_bearish = trend_h1 == "BEARISH"
 
+    # ── SUPERTREND FILTER: Strict Buy/Sell Zones ──────────────────────────────
+    is_st_bullish = (current_st_dir == 1.0)
+    is_st_bearish = (current_st_dir == -1.0)
+
     # ── FIX: Pullback Filter (Don't buy the top) ─────────────────────────────
     # Price must be within 0.8 ATR of the EMA20 to ensure we are entering on a pullback or early crossover.
     dist_to_ema20 = abs(current_close - current_ema20)
     is_near_ema20 = dist_to_ema20 <= (current_atr * 0.8)
 
     buy_score = 0
-    if current_close > current_ema50: buy_score += 1          # Price above M15 EMA50
+    if current_close > current_ema50: buy_score += 1          # Price above M5 EMA50
     if current_ema20 > current_ema50: buy_score += 1          # EMA20 > EMA50 (bullish structure)
     if 40 < current_rsi < 65:         buy_score += 1          # RSI in healthy buy zone
     if macd_bullish_cross:             buy_score += 1          # MACD just crossed UP (strong signal)
@@ -481,13 +489,13 @@ def analyze_market(symbol):
     if trend_m5  == "BEARISH":         sell_score += 1
     if "Bearish" in sentiment_label:   sell_score += 1
 
-    # Require Macro Alignment + Pullback proximity + at least 4/6 micro confluence points
+    # Require Macro Alignment + SuperTrend + Pullback proximity + at least 4/6 micro confluence points
     direction  = "NONE"
     confluences = 0
-    if is_macro_bullish and is_near_ema20 and buy_score >= 4 and sell_score < buy_score:
+    if is_macro_bullish and is_st_bullish and is_near_ema20 and buy_score >= 4 and sell_score < buy_score:
         direction   = "BUY"
         confluences = buy_score + 2 # +2 for H1/H4 so UI still shows out of 8
-    elif is_macro_bearish and is_near_ema20 and sell_score >= 4 and sell_score > buy_score:
+    elif is_macro_bearish and is_st_bearish and is_near_ema20 and sell_score >= 4 and sell_score > buy_score:
         direction   = "SELL"
         confluences = sell_score + 2
 
