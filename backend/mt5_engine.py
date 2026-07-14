@@ -236,13 +236,14 @@ def get_alpha_vantage_sentiment():
     if current_time - last_av_fetch_time < 3600 and av_cached_data:
         return av_cached_data
         
-    url = f"https://www.alphavantage.co/query?function=NEWS_SENTIMENT&topics=economy_macro,financial_markets&apikey={api_key}"
+    # Removed topics=economy_macro,financial_markets as AV sometimes flags it as invalid input on free tiers
+    url = f"https://www.alphavantage.co/query?function=NEWS_SENTIMENT&apikey={api_key}"
     try:
         res = requests.get(url, timeout=10)
         if res.status_code == 200:
             data = res.json()
             if "Information" in data or "Note" in data:
-                print(f"Alpha Vantage Rate Limit: {data}")
+                # Silently ignore AV rate limits/errors to not spam the console
                 return av_cached_data
                 
             feed = data.get("feed", [])
@@ -394,11 +395,13 @@ def analyze_market(symbol):
     # ── FIX #7: Volatility Filter ─────────────────────────────────────────────
     # ATR too low = dead market (wide spread eats profit)
     # ATR too high = explosive/news spike (unpredictable, dangerous)
-    ATR_MIN = 2.0   # Minimum ATR for XAUUSD — market must have movement
-    ATR_MAX = 25.0  # Maximum ATR — avoid news spike chaos
-    if current_atr < ATR_MIN or current_atr > ATR_MAX:
-        print(f"   -> ATR={current_atr:.2f} outside safe range [{ATR_MIN}-{ATR_MAX}]. Skipping.")
-        return
+    # NOTE: These fixed values are tuned for XAUUSD. Synthetic indices have massive ATRs.
+    if "XAU" in symbol.upper() or "GOLD" in symbol.upper():
+        ATR_MIN = 2.0   
+        ATR_MAX = 25.0  
+        if current_atr < ATR_MIN or current_atr > ATR_MAX:
+            print(f"   -> [{symbol}] ATR={current_atr:.2f} outside safe range [{ATR_MIN}-{ATR_MAX}]. Skipping.")
+            return
 
     current_live_price = None
     if tick:
