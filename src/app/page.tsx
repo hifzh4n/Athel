@@ -38,9 +38,6 @@ export default function LandingPage() {
               Enter Dashboard
             </Button>
           </Link>
-          <Button variant="outline" size="lg" className="w-full sm:w-auto h-14 px-8 text-lg rounded-full font-bold bg-black/50 border-white/20 hover:bg-white/10">
-            Learn More
-          </Button>
         </div>
       </main>
     </div>
