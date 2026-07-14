@@ -209,7 +209,7 @@ def is_valid_trading_session(symbol):
     Dead zone blocked: 20:00 – 00:00 UTC (post-NY close, very thin liquidity).
     """
     # Synthetic indices run 24/7
-    if any(keyword in symbol for keyword in ["Vol", "Volatility", "Step", "Crash", "Boom", "Jump"]):
+    if any(keyword in symbol.lower() for keyword in ["vol", "step", "crash", "boom", "jump"]):
         return True
 
     now_utc = datetime.now(timezone.utc)
