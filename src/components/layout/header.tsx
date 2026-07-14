@@ -33,10 +33,10 @@ export function Header() {
         <img src="/logo.png" alt="Athel Logo" className="w-7 h-7 rounded object-contain" />
         <div className="flex flex-col flex-1">
           <h1 className="text-lg font-bold text-primary tracking-tight neon-text font-script mt-1 leading-none">Athel</h1>
-          <div className="flex flex-col gap-0.5 mt-0.5 w-full">
+          <div className="flex items-center gap-3 mt-0.5 w-full overflow-x-auto no-scrollbar">
             {Object.keys(livePrices).length > 0 ? (
               Object.entries(livePrices).map(([safeSymbol, data]) => (
-                <div key={safeSymbol} className="flex items-baseline gap-2">
+                <div key={safeSymbol} className="flex items-baseline gap-1.5 shrink-0">
                   <span className="text-[9px] text-muted-foreground uppercase tracking-widest font-sans font-medium">{safeSymbol.replace(/_/g, " ")}</span>
                   <span className={`text-[9px] ${data.direction === 'down' ? 'text-red-400' : 'text-emerald-400'} font-mono font-bold flex items-baseline gap-1 transition-colors duration-300`}>
                     <span className={`w-1 h-1 rounded-full ${data.direction === 'down' ? 'bg-red-400' : 'bg-emerald-400'} animate-pulse self-center transition-colors duration-300`}></span>
