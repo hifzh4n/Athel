@@ -21,21 +21,6 @@ export function Sidebar({ className = "" }: { className?: string }) {
         <img src="/logo.png" alt="Athel Logo" className="w-8 h-8 rounded-md object-contain" />
         <div className="flex flex-col flex-1 w-full">
           <h1 className="text-xl font-bold text-primary neon-text tracking-tight font-script">Athel</h1>
-          <div className="flex items-center gap-4 mt-1 overflow-x-auto no-scrollbar w-full">
-            {Object.keys(livePrices).length > 0 ? (
-              Object.entries(livePrices).map(([safeSymbol, data]) => (
-                <div key={safeSymbol} className="flex items-baseline gap-1.5 shrink-0">
-                  <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-sans font-medium">{safeSymbol.replace(/_/g, " ")}</span>
-                  <span className={`text-[10px] ${data.direction === 'down' ? 'text-red-400' : 'text-emerald-400'} font-mono font-bold flex items-baseline gap-1 transition-colors duration-300`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${data.direction === 'down' ? 'bg-red-400' : 'bg-emerald-400'} animate-pulse self-center transition-colors duration-300`}></span>
-                    {data.price.toFixed(2)}
-                  </span>
-                </div>
-              ))
-            ) : (
-              <span className="text-[10px] text-muted-foreground font-mono">Loading prices...</span>
-            )}
-          </div>
         </div>
       </div>
       <nav className="flex-1 p-4 space-y-2">
