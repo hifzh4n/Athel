@@ -17,7 +17,9 @@ export default function DashboardLayout({
       <div className="flex flex-col flex-1 min-w-0 relative z-10">
         <Header />
         <main className="flex-1 p-4 lg:p-6 overflow-y-auto overflow-x-hidden overscroll-y-contain no-scrollbar">
-          {children}
+          <div className="max-w-7xl mx-auto w-full">
+            {children}
+          </div>
         </main>
         <BottomNav />
       </div>
