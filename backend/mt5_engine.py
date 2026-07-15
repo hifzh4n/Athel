@@ -209,7 +209,7 @@ def is_valid_trading_session(symbol):
     Dead zone blocked: 20:00 – 00:00 UTC (post-NY close, very thin liquidity).
     """
     # Synthetic indices run 24/7
-    if any(keyword in symbol.lower() for keyword in ["vol", "step", "crash", "boom", "jump"]):
+    if any(keyword in symbol.lower() for keyword in ["vol", "step", "crash", "boom", "jump", "storm"]):
         return True
 
     now_utc = datetime.now(timezone.utc)
@@ -418,13 +418,29 @@ def analyze_market(symbol):
     current_rsi    = float(df_m15['rsi'].iloc[IDX])
     current_st_dir = float(st_df.iloc[IDX, 1])   # SuperTrend direction from M15
 
-    # ── Volatility Filter ─────────────────────────────────────────────
-    # NOTE: Tuned for XAUUSD M15
-    if "XAU" in symbol.upper() or "GOLD" in symbol.upper():
-        ATR_MIN = 1.0
-        ATR_MAX = 15.0
+    is_synthetic = any(keyword in symbol.lower() for keyword in ["vol", "step", "crash", "boom", "jump", "storm"])
+
+    # ── 1. Volatility Filter (Dynamic Bounds) ─────────────────────────
+    if not is_synthetic:
+        if "XAU" in symbol.upper() or "GOLD" in symbol.upper():
+            ATR_MIN, ATR_MAX = 1.0, 15.0
+        elif "JPY" in symbol.upper():
+            ATR_MIN, ATR_MAX = 0.05, 0.50
+        else:
+            ATR_MIN, ATR_MAX = 0.0005, 0.0050
+
         if current_atr < ATR_MIN or current_atr > ATR_MAX:
-            print(f"   -> [{symbol}] ATR={current_atr:.2f} outside safe range [{ATR_MIN}-{ATR_MAX}]. Skipping.")
+            print(f"   -> [{symbol}] ATR={current_atr:.4f} outside safe range [{ATR_MIN}-{ATR_MAX}]. Skipping.")
+            return
+
+    # ── 2. Live Spread Filter ─────────────────────────────────────────
+    current_live_price = None
+    if tick:
+        current_live_price = (tick.bid + tick.ask) / 2
+        spread = tick.ask - tick.bid
+        max_spread = current_atr * 0.20
+        if spread > max_spread:
+            print(f"   -> [{symbol}] Spread={spread:.4f} exceeds max safe spread {max_spread:.4f} (20% of ATR). Skipping.")
             return
 
     # ── ADX Trend Filter ─────────────────────────────────────────────────
@@ -434,10 +450,6 @@ def analyze_market(symbol):
     if current_adx < ADX_MIN:
         print(f"   -> [{symbol}] ADX={current_adx:.1f} < {ADX_MIN} (ranging market). Skipping.")
         return
-
-    current_live_price = None
-    if tick:
-        current_live_price = (tick.bid + tick.ask) / 2
 
     # 2. Track active signals against TP/SL
     if current_live_price is not None:
@@ -512,8 +524,12 @@ def analyze_market(symbol):
                         send_telegram_message(f"🛡️ *BREAK-EVEN SET*\n{symbol} SL moved to entry @ {new_sl:.2f}\nYou cannot lose this trade!")
 
     # Fetch AV sentiment BEFORE calculating confluences so the math can use it
-    av_sentiment   = get_alpha_vantage_sentiment()
-    sentiment_label = av_sentiment['label'] if av_sentiment else "Neutral"
+    if not is_synthetic:
+        av_sentiment   = get_alpha_vantage_sentiment()
+        sentiment_label = av_sentiment['label'] if av_sentiment else "Neutral"
+    else:
+        av_sentiment = None
+        sentiment_label = "Neutral"
 
     # 3. Detect New Setups — Sniper Strategy
     is_macro_bullish = trend_h1 == "BULLISH" and trend_h4 == "BULLISH"
@@ -522,10 +538,11 @@ def analyze_market(symbol):
     is_st_bullish = (current_st_dir == 1.0)
     is_st_bearish = (current_st_dir == -1.0)
 
-    # ── Pullback Filter: price must be within 1.0x ATR of EMA50 ───────────────
-    # Golden Zone: Buy only at deep pullbacks to the M15 EMA50
+    # ── Pullback Filter: Golden Zone ───────────────────────────────
+    # JPY pairs get a wider 1.5x ATR pullback allowance due to momentum traits.
+    pullback_multiplier = 1.5 if "JPY" in symbol.upper() else 1.0
     dist_to_ema50 = abs(current_close - current_ema50)
-    is_near_ema50 = dist_to_ema50 <= (current_atr * 1.0)
+    is_near_ema50 = dist_to_ema50 <= (current_atr * pullback_multiplier)
 
     buy_score = 0
     if current_close > current_ema50: buy_score += 1
@@ -533,7 +550,7 @@ def analyze_market(symbol):
     if 35 < current_rsi < 70:         buy_score += 1
     if macd_bullish_accel:             buy_score += 1
     if trend_m15 == "BULLISH":         buy_score += 1
-    if "Bullish" in sentiment_label:   buy_score += 1
+    if not is_synthetic and "Bullish" in sentiment_label:   buy_score += 1
 
     sell_score = 0
     if current_close < current_ema50: sell_score += 1
@@ -541,15 +558,17 @@ def analyze_market(symbol):
     if 30 < current_rsi < 65:         sell_score += 1
     if macd_bearish_accel:             sell_score += 1
     if trend_m15 == "BEARISH":         sell_score += 1
-    if "Bearish" in sentiment_label:   sell_score += 1
+    if not is_synthetic and "Bearish" in sentiment_label:   sell_score += 1
 
     # Require: Macro Alignment + SuperTrend + Pullback + TRUE MACD Crossover
     direction  = "NONE"
     confluences = 0
-    if is_macro_bullish and is_st_bullish and is_near_ema50 and macd_bullish_cross and buy_score >= 4:
+    req_score = 3 if is_synthetic else 4
+    max_score = 5 if is_synthetic else 6
+    if is_macro_bullish and is_st_bullish and is_near_ema50 and macd_bullish_cross and buy_score >= req_score:
         direction   = "BUY"
         confluences = buy_score + 3
-    elif is_macro_bearish and is_st_bearish and is_near_ema50 and macd_bearish_cross and sell_score >= 4:
+    elif is_macro_bearish and is_st_bearish and is_near_ema50 and macd_bearish_cross and sell_score >= req_score:
         direction   = "SELL"
         confluences = sell_score + 3
 
@@ -561,7 +580,7 @@ def analyze_market(symbol):
     # 3-min cooldown between signals
     cooldown_remaining = max(0, int(180 - time_since_last))
 
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {symbol}: {current_close:.2f} | ATR:{current_atr:.1f} | ADX:{current_adx:.1f} | MTF:{mtf_trends['M15'][0]}/{mtf_trends['H1'][0]}/{mtf_trends['H4'][0]} | ST:{'B' if is_st_bullish else ('S' if is_st_bearish else '-')} | PB:{'Y' if is_near_ema50 else 'N'} | RSI:{current_rsi:.1f} | MACD_X:{'B' if macd_bullish_cross else ('S' if macd_bearish_cross else '-')} | BUY:{buy_score}/6 SELL:{sell_score}/6 -> {direction}")
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] {symbol}: {current_close:.2f} | ATR:{current_atr:.4f} | ADX:{current_adx:.1f} | MTF:{mtf_trends['M15'][0]}/{mtf_trends['H1'][0]}/{mtf_trends['H4'][0]} | ST:{'B' if is_st_bullish else ('S' if is_st_bearish else '-')} | PB:{'Y' if is_near_ema50 else 'N'} | RSI:{current_rsi:.1f} | MACD_X:{'B' if macd_bullish_cross else ('S' if macd_bearish_cross else '-')} | BUY:{buy_score}/{max_score} SELL:{sell_score}/{max_score} -> {direction}")
 
     # Skip if cooldown active
     if direction != "NONE" and cooldown_remaining > 0:
