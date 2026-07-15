@@ -294,7 +294,7 @@ def get_ai_analysis(symbol, direction, price, rsi, macd_hist, mtf_trends, conflu
 
     prompt = f"Act as a professional forex trader. A {direction} setup was detected for {symbol} at ${price:.2f}. "
     prompt += f"RSI={rsi:.1f}, MACD Histogram={macd_hist:.4f}. "
-    prompt += f"Timeframe trends: M15={mtf_trends['M15']}, H1={mtf_trends['H1']}, H4={mtf_trends['H4']}. "
+    prompt += f"Timeframe trends: M5={mtf_trends.get('M5','-')}, M15={mtf_trends.get('M15','-')}, H1={mtf_trends.get('H1','-')}. "
     prompt += f"{confluences} out of 8 confluence factors aligned. "
     prompt += f"ATR (volatility) = {atr:.2f}. "
     
