@@ -630,8 +630,8 @@ def analyze_market(symbol):
         entry_high   = entry_price + (current_atr * 0.2)
 
     rr = calculate_rr(entry_price, stop_loss, take_profit1)
-    confidence, grade = calculate_confidence_and_grade(confluences)
-    ai_analysis = get_gemini_analysis(symbol, direction, entry_price, current_rsi, macd_hist_closed, mtf_trends, confluences, av_sentiment, current_atr)
+    confidence_score, grade = calculate_confidence_and_grade(confluences)
+    ai_analysis = get_ai_analysis(symbol, direction, entry_price, current_rsi, macd_hist_closed, mtf_trends, confluences, av_sentiment, current_atr)
 
     signal_payload = {
         "symbol":       symbol,
