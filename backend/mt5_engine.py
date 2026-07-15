@@ -754,6 +754,15 @@ def place_auto_trade(symbol, direction, entry_price, stop_loss, take_profit1, at
         if price - live_tp1 < min_stop:
             live_tp1 = round(price - min_stop * 1.5, symbol_info.digits)
 
+    # Dynamically select filling mode supported by the broker for this symbol
+    filling_type = mt5.ORDER_FILLING_IOC
+    if symbol_info.filling_mode & mt5.SYMBOL_FILLING_FOK:
+        filling_type = mt5.ORDER_FILLING_FOK
+    elif symbol_info.filling_mode & mt5.SYMBOL_FILLING_IOC:
+        filling_type = mt5.ORDER_FILLING_IOC
+    else:
+        filling_type = mt5.ORDER_FILLING_RETURN
+
     request = {
         "action":    mt5.TRADE_ACTION_DEAL,
         "symbol":    symbol,
@@ -766,7 +775,7 @@ def place_auto_trade(symbol, direction, entry_price, stop_loss, take_profit1, at
         "magic":     20250715,
         "comment":   "Athel AutoTrade",
         "type_time": mt5.ORDER_TIME_GTC,
-        "type_filling": mt5.ORDER_FILLING_IOC,
+        "type_filling": filling_type,
     }
 
     result = mt5.order_send(request)
@@ -878,6 +887,17 @@ def enforce_strict_dollar_tp_sl():
             order_type = mt5.ORDER_TYPE_SELL if pos.type == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY
             price = tick.bid if pos.type == mt5.ORDER_TYPE_BUY else tick.ask
 
+            # Determine filling mode dynamically
+            sym_info = mt5.symbol_info(pos.symbol)
+            filling_type = mt5.ORDER_FILLING_IOC
+            if sym_info:
+                if sym_info.filling_mode & mt5.SYMBOL_FILLING_FOK:
+                    filling_type = mt5.ORDER_FILLING_FOK
+                elif sym_info.filling_mode & mt5.SYMBOL_FILLING_IOC:
+                    filling_type = mt5.ORDER_FILLING_IOC
+                else:
+                    filling_type = mt5.ORDER_FILLING_RETURN
+
             close_request = {
                 "action": mt5.TRADE_ACTION_DEAL,
                 "symbol": pos.symbol,
@@ -889,7 +909,7 @@ def enforce_strict_dollar_tp_sl():
                 "magic": 20250715,
                 "comment": "Athel Force Close",
                 "type_time": mt5.ORDER_TIME_GTC,
-                "type_filling": mt5.ORDER_FILLING_IOC,
+                "type_filling": filling_type,
             }
 
             result = mt5.order_send(close_request)
