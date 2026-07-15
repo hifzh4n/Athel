@@ -569,7 +569,7 @@ def analyze_market(symbol):
     # 3-min cooldown between signals. Resets to 0 instantly when a trade closes.
     cooldown_remaining = max(0, int(180 - time_since_last))
 
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {symbol}: {current_close:.2f} | ATR:{current_atr:.1f} | ADX:{current_adx:.1f} | MTF:{trend_m5[0]}/{trend_m15[0]}/{trend_h1[0]}/{trend_h4[0]} | RSI:{current_rsi:.1f} | MACD_X:{'B' if macd_bullish_cross else ('S' if macd_bearish_cross else '-')} | BUY:{buy_score}/8 SELL:{sell_score}/8 -> {direction}")
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] {symbol}: {current_close:.2f} | ATR:{current_atr:.1f} | ADX:{current_adx:.1f} | MTF:-/{mtf_trends['M5'][0]}/{mtf_trends['H1'][0]}/- | RSI:{current_rsi:.1f} | MACD_X:{'B' if macd_bullish_cross else ('S' if macd_bearish_cross else '-')} | BUY:{buy_score}/8 SELL:{sell_score}/8 -> {direction}")
 
     # Skip if cooldown active
     if direction != "NONE" and cooldown_remaining > 0:
