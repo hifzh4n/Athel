@@ -638,7 +638,7 @@ def analyze_market(symbol):
         "direction":    direction,
         "status":       "ACTIVE",
         "price":        entry_price,
-        "confidence":   confidence,
+        "confidence":   confidence_score,
         "grade":        grade,
         "riskReward":   rr,
         "confluences":  confluences,
