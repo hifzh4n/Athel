@@ -401,13 +401,16 @@ def analyze_market(symbol):
     df_m5['atr'] = ta.atr(df_m5['high'], df_m5['low'], df_m5['close'], length=14)
     current_atr   = float(df_m5['atr'].iloc[IDX])
 
-    # ── MACD: Direction-based (not crossover) for faster scalp signals ──────────
+    # ── MACD: True crossover detection ─────────────────────────────────────
+    # Crossover = MACD just flipped from negative to positive (or vice versa).
+    # This is a rare, high-quality event. Direction-only fires every candle = spam.
     macd_hist_prev    = float(macd_df.iloc[-3, 1])  # 2 candles ago
     macd_hist_closed  = float(macd_df.iloc[IDX, 1]) # last closed candle
-    macd_bullish_cross = macd_hist_closed > 0        # MACD histogram positive = bullish momentum
-    macd_bearish_cross = macd_hist_closed < 0        # MACD histogram negative = bearish momentum
-    macd_bullish_accel = macd_hist_closed > macd_hist_prev  # Histogram growing (accelerating up)
-    macd_bearish_accel = macd_hist_closed < macd_hist_prev  # Histogram shrinking (accelerating down)
+    macd_bullish_cross = macd_hist_prev <= 0 and macd_hist_closed > 0  # just crossed UP
+    macd_bearish_cross = macd_hist_prev >= 0 and macd_hist_closed < 0  # just crossed DOWN
+    # Bonus: histogram accelerating (momentum building)
+    macd_bullish_accel = macd_hist_closed > macd_hist_prev and macd_hist_closed > 0
+    macd_bearish_accel = macd_hist_closed < macd_hist_prev and macd_hist_closed < 0
 
     current_close  = float(df_m5['close'].iloc[IDX])
     current_ema20  = float(df_m5['ema20'].iloc[IDX])
@@ -473,9 +476,10 @@ def analyze_market(symbol):
     is_st_bullish = (current_st_dir == 1.0)
     is_st_bearish = (current_st_dir == -1.0)
 
-    # ── Pullback Filter: widened to 2.0x ATR for more entry opportunities ───────
+    # ── Pullback Filter: price must be within 1.0x ATR of EMA20 ───────────────
+    # Prevents chasing entries far from the mean — a key scalping discipline.
     dist_to_ema20 = abs(current_close - current_ema20)
-    is_near_ema20 = dist_to_ema20 <= (current_atr * 2.0)
+    is_near_ema20 = dist_to_ema20 <= (current_atr * 1.0)
 
     buy_score = 0
     if current_close > current_ema50: buy_score += 1          # Price above M5 EMA50
@@ -495,13 +499,13 @@ def analyze_market(symbol):
     if trend_m5  == "BEARISH":         sell_score += 1
     if "Bearish" in sentiment_label:   sell_score += 1
 
-    # Require Macro Alignment + SuperTrend + Pullback proximity + at least 3/7 micro confluence points
+    # Require: Macro Alignment + SuperTrend + Pullback + at least 4/7 confluence factors
     direction  = "NONE"
     confluences = 0
-    if is_macro_bullish and is_st_bullish and is_near_ema20 and buy_score >= 3 and sell_score < buy_score:
+    if is_macro_bullish and is_st_bullish and is_near_ema20 and buy_score >= 4 and sell_score < buy_score:
         direction   = "BUY"
         confluences = buy_score + 2
-    elif is_macro_bearish and is_st_bearish and is_near_ema20 and sell_score >= 3 and sell_score > buy_score:
+    elif is_macro_bearish and is_st_bearish and is_near_ema20 and sell_score >= 4 and sell_score > buy_score:
         direction   = "SELL"
         confluences = sell_score + 2
 
@@ -510,9 +514,8 @@ def analyze_market(symbol):
     last_dir = last_published_direction.get(symbol, "NONE")
     
     time_since_last  = current_time - last_time
-    # 60s spam guard only — prevents same signal firing 10x on the same candle.
-    # This resets to 0 instantly when a trade closes.
-    cooldown_remaining = max(0, int(60 - time_since_last))
+    # 3-min cooldown between signals. Resets to 0 instantly when a trade closes.
+    cooldown_remaining = max(0, int(180 - time_since_last))
 
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {symbol}: {current_close:.2f} | ATR:{current_atr:.1f} | MTF:{trend_m5[0]}/{trend_m15[0]}/{trend_h1[0]}/{trend_h4[0]} | RSI:{current_rsi:.1f} | MACD_X:{'B' if macd_bullish_cross else ('S' if macd_bearish_cross else '-')} | BUY:{buy_score}/8 SELL:{sell_score}/8 -> {direction}")
 
@@ -537,13 +540,13 @@ def analyze_market(symbol):
     if direction == "NONE":
         return
 
-    # ── SCALPING SL/TP — Tight & Fast ────────────────────────────────────────
-    # SL  = 0.5x ATR  (tight, exit fast if wrong)
-    # TP1 = 0.8x ATR  (quick win, ~1:1.6 RR)
-    # TP2 = 1.5x ATR  (runner for strong momentum)
-    sl_distance  = round(current_atr * 0.5, 2)
-    tp1_distance = round(current_atr * 0.8, 2)
-    tp2_distance = round(current_atr * 1.5, 2)
+    # ── SCALPING SL/TP ─────────────────────────────────────────────────────
+    # SL  = 1.0x ATR  (enough room to breathe past candle noise)
+    # TP1 = 1.5x ATR  (positive RR 1:1.5, quick close)
+    # TP2 = 2.5x ATR  (runner if momentum is strong)
+    sl_distance  = round(current_atr * 1.0, 2)
+    tp1_distance = round(current_atr * 1.5, 2)
+    tp2_distance = round(current_atr * 2.5, 2)
     entry_price  = current_close
 
     if direction == "BUY":
