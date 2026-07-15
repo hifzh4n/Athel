@@ -447,9 +447,9 @@ def analyze_market(symbol):
             return
 
     # ── ADX Trend Filter ─────────────────────────────────────────────────
-    # ADX < 25 = weak / sideways market. Entries in ranging markets always SL.
-    # ADX >= 25 = trending market. This is where scalping works.
-    ADX_MIN = 25
+    # ADX < 20 = weak / sideways market. Entries in ranging markets always SL.
+    # ADX >= 20 = trending enough for scalping.
+    ADX_MIN = 20
     if current_adx < ADX_MIN:
         print(f"   -> [{symbol}] ADX={current_adx:.1f} < {ADX_MIN} (ranging market). Skipping.")
         return
@@ -564,15 +564,15 @@ def analyze_market(symbol):
     if trend_m15 == "BEARISH":         sell_score += 1
     if not is_synthetic and "Bearish" in sentiment_label:   sell_score += 1
 
-    # Scalping: Macro + SuperTrend + Pullback + MACD acceleration + 3/6 score
+    # Scalping: Macro + SuperTrend + 3/6 score (pullback/MACD are part of score, not strict gates)
     direction  = "NONE"
     confluences = 0
     req_score = 3 if is_synthetic else 3
     max_score = 5 if is_synthetic else 6
-    if is_macro_bullish and is_st_bullish and is_near_ema20 and macd_bullish_accel and buy_score >= req_score:
+    if is_macro_bullish and is_st_bullish and buy_score >= req_score:
         direction   = "BUY"
         confluences = buy_score + 2
-    elif is_macro_bearish and is_st_bearish and is_near_ema20 and macd_bearish_accel and sell_score >= req_score:
+    elif is_macro_bearish and is_st_bearish and sell_score >= req_score:
         direction   = "SELL"
         confluences = sell_score + 2
 
