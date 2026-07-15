@@ -606,12 +606,15 @@ def analyze_market(symbol):
         print(f"   -> [{symbol}] Cooldown: {cooldown_remaining}s remaining")
         return
 
-    # ── GATE: Block ANY new signal if this symbol already has an active signal ──
-    has_active_for_symbol = any(
-        s.get('symbol') == symbol for s in active_signals.values()
-    )
-    if direction != "NONE" and has_active_for_symbol:
-        print(f"   -> [{symbol}] Skipping: already has an ACTIVE signal. Waiting for TP/SL.")
+    # ── GATE: Block ANY new signal if this symbol already has an open MT5 position ──
+    # This is bulletproof: we ask the broker directly if there is an open trade.
+    mt5_positions = mt5.positions_get(symbol=symbol)
+    has_open_mt5 = len(mt5_positions) > 0 if mt5_positions else False
+    
+    has_active_for_symbol = any(s.get('symbol') == symbol for s in active_signals.values())
+    
+    if direction != "NONE" and (has_open_mt5 or has_active_for_symbol):
+        print(f"   -> [{symbol}] Skipping: already has an ACTIVE position in MT5/Firebase. Waiting for TP/SL.")
         return
 
     # Skip if same direction as last signal AND still within cooldown window
