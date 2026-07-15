@@ -397,9 +397,12 @@ def analyze_market(symbol):
     # ── SUPERTREND (10, 3.0) ──────────────────────────────────────────────────
     st_df = ta.supertrend(df_m5['high'], df_m5['low'], df_m5['close'], length=10, multiplier=3.0)
 
-    # ── FIX #1: ATR for dynamic SL/TP ────────────────────────────────────────
+    # ── ATR + ADX ─────────────────────────────────────────────────────────
     df_m5['atr'] = ta.atr(df_m5['high'], df_m5['low'], df_m5['close'], length=14)
     current_atr   = float(df_m5['atr'].iloc[IDX])
+
+    adx_df      = ta.adx(df_m5['high'], df_m5['low'], df_m5['close'], length=14)
+    current_adx = float(adx_df.iloc[IDX, 0]) if adx_df is not None and len(adx_df.columns) > 0 else 0
 
     # ── MACD: True crossover detection ─────────────────────────────────────
     # Crossover = MACD just flipped from negative to positive (or vice versa).
@@ -423,11 +426,19 @@ def analyze_market(symbol):
     # ATR too high = explosive/news spike (unpredictable, dangerous)
     # NOTE: These fixed values are tuned for XAUUSD. Synthetic indices have massive ATRs.
     if "XAU" in symbol.upper() or "GOLD" in symbol.upper():
-        ATR_MIN = 2.0   
-        ATR_MAX = 25.0  
+        ATR_MIN = 2.0
+        ATR_MAX = 25.0
         if current_atr < ATR_MIN or current_atr > ATR_MAX:
             print(f"   -> [{symbol}] ATR={current_atr:.2f} outside safe range [{ATR_MIN}-{ATR_MAX}]. Skipping.")
             return
+
+    # ── ADX Trend Filter ─────────────────────────────────────────────────
+    # ADX < 25 = weak / sideways market. Entries in ranging markets always SL.
+    # ADX >= 25 = trending market. This is where scalping works.
+    ADX_MIN = 25
+    if current_adx < ADX_MIN:
+        print(f"   -> [{symbol}] ADX={current_adx:.1f} < {ADX_MIN} (ranging market). Skipping.")
+        return
 
     current_live_price = None
     if tick:
@@ -460,6 +471,50 @@ def analyze_market(symbol):
                 last_published_time[symbol] = 0
                 emoji = "✅" if status == "COMPLETED_TP" else "❌"
                 send_telegram_message(f"{emoji} *TRADE CLOSED* {emoji}\n\nSymbol: *{sig_data.get('symbol', symbol)}*\nDirection: *{direction}*\nResult: *{status}*\nClose Price: {current_live_price:.2f}")
+            else:
+                # ── TRAILING SL: Move to Break-Even ─────────────────────────────
+                # Once price moves 0.5x ATR in our favor, push SL to entry price.
+                # We can never lose this trade anymore.
+                entry    = sig_data.get('price', 0)
+                sig_atr  = sig_data.get('atr', current_atr)
+                be_trigger = sig_atr * 0.5  # break-even trigger distance
+                already_be = sig_data.get('breakeven_set', False)
+
+                if not already_be:
+                    moved_to_be = False
+                    if direction == "BUY" and current_live_price >= entry + be_trigger:
+                        new_sl = round(entry, 5)
+                        moved_to_be = True
+                    elif direction == "SELL" and current_live_price <= entry - be_trigger:
+                        new_sl = round(entry, 5)
+                        moved_to_be = True
+
+                    if moved_to_be:
+                        active_signals[sig_id]['stopLoss'] = new_sl
+                        active_signals[sig_id]['breakeven_set'] = True
+                        # Update Firebase so dashboard reflects the new SL
+                        try:
+                            requests.patch(f"{FIREBASE_URL}/signals/{sig_id}.json", json={
+                                'stopLoss': new_sl,
+                                'updatedAt': datetime.now(timezone.utc).isoformat()
+                            })
+                        except Exception:
+                            pass
+                        # Move SL on the actual MT5 position too
+                        positions = mt5.positions_get(symbol=symbol)
+                        if positions:
+                            for pos in positions:
+                                if pos.comment == "Athel AutoTrade":
+                                    sl_request = {
+                                        "action":   mt5.TRADE_ACTION_SLTP,
+                                        "symbol":   symbol,
+                                        "position": pos.ticket,
+                                        "sl":       new_sl,
+                                        "tp":       pos.tp,
+                                    }
+                                    mt5.order_send(sl_request)
+                        print(f"   -> [{symbol}] 🛡️ BREAK-EVEN SET: SL moved to entry {new_sl:.2f}")
+                        send_telegram_message(f"🛡️ *BREAK-EVEN SET*\n{symbol} SL moved to entry @ {new_sl:.2f}\nYou cannot lose this trade!")
 
     # Fetch AV sentiment BEFORE calculating confluences so the math can use it
     av_sentiment   = get_alpha_vantage_sentiment()
@@ -517,7 +572,7 @@ def analyze_market(symbol):
     # 3-min cooldown between signals. Resets to 0 instantly when a trade closes.
     cooldown_remaining = max(0, int(180 - time_since_last))
 
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {symbol}: {current_close:.2f} | ATR:{current_atr:.1f} | MTF:{trend_m5[0]}/{trend_m15[0]}/{trend_h1[0]}/{trend_h4[0]} | RSI:{current_rsi:.1f} | MACD_X:{'B' if macd_bullish_cross else ('S' if macd_bearish_cross else '-')} | BUY:{buy_score}/8 SELL:{sell_score}/8 -> {direction}")
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] {symbol}: {current_close:.2f} | ATR:{current_atr:.1f} | ADX:{current_adx:.1f} | MTF:{trend_m5[0]}/{trend_m15[0]}/{trend_h1[0]}/{trend_h4[0]} | RSI:{current_rsi:.1f} | MACD_X:{'B' if macd_bullish_cross else ('S' if macd_bearish_cross else '-')} | BUY:{buy_score}/8 SELL:{sell_score}/8 -> {direction}")
 
     # Skip if cooldown active
     if direction != "NONE" and cooldown_remaining > 0:
