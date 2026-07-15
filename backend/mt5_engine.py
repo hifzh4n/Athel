@@ -845,6 +845,64 @@ def reconcile_signals_with_mt5():
             emoji = "✅" if status == "COMPLETED_TP" else "❌"
             send_telegram_message(f"{emoji} *TRADE CLOSED (Reconciled)* {emoji}\n\nSymbol: *{symbol}*\nDirection: *{direction}*\nResult: *{status}*")
 
+# ─── Strict Dollar Monitoring ──────────────────────────────────────────────────
+
+def enforce_strict_dollar_tp_sl():
+    """
+    Actively monitors open MT5 positions and force-closes them the millisecond
+    their total floating profit (including swap/commission) reaches >= $1.00 or <= -$1.00.
+    This guarantees exact dollar amounts regardless of spread or broker slippage.
+    """
+    positions = mt5.positions_get()
+    if not positions:
+        return
+
+    TARGET_TP_USD = 1.00
+    TARGET_SL_USD = -1.00
+
+    for pos in positions:
+        if pos.comment != "Athel AutoTrade":
+            continue
+
+        total_profit = pos.profit + pos.swap + pos.commission
+        if total_profit >= TARGET_TP_USD or total_profit <= TARGET_SL_USD:
+            # Force close the position
+            tick = mt5.symbol_info_tick(pos.symbol)
+            if not tick:
+                continue
+
+            order_type = mt5.ORDER_TYPE_SELL if pos.type == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY
+            price = tick.bid if pos.type == mt5.ORDER_TYPE_BUY else tick.ask
+
+            close_request = {
+                "action": mt5.TRADE_ACTION_DEAL,
+                "symbol": pos.symbol,
+                "volume": pos.volume,
+                "type": order_type,
+                "position": pos.ticket,
+                "price": price,
+                "deviation": 20,
+                "magic": 20250715,
+                "comment": "Athel Force Close",
+                "type_time": mt5.ORDER_TIME_GTC,
+                "type_filling": mt5.ORDER_FILLING_IOC,
+            }
+
+            result = mt5.order_send(close_request)
+            if result and result.retcode == mt5.TRADE_RETCODE_DONE:
+                status = "TP" if total_profit > 0 else "SL"
+                print(f"   -> [STRICT CLOSE] 💥 Force closed {pos.symbol} at ${total_profit:.2f} ({status})")
+                
+                # Instantly clean up Firebase so the bot doesn't have to wait for the next sync
+                for sig_id, sig in list(active_signals.items()):
+                    if sig.get('symbol') == pos.symbol:
+                        new_status = "COMPLETED_TP" if total_profit > 0 else "COMPLETED_SL"
+                        update_signal_status(sig_id, new_status)
+                        del active_signals[sig_id]
+                        last_published_direction[pos.symbol] = "NONE"
+                        last_published_time[pos.symbol] = 0
+                        break
+
 # ─── MT5 History Sync ────────────────────────────────────────────────────────────
 
 _last_mt5_sync = 0  # timestamp of last MT5 history sync
@@ -952,6 +1010,8 @@ if __name__ == "__main__":
     while True:
         try:
             target_symbols = os.getenv("SYMBOLS", "XAUUSD").split(",")
+            # 0. Force close any trades that hit $1 profit/loss right now
+            enforce_strict_dollar_tp_sl()
             # 1. Sync MT5 trade history to Firebase (every 60s)
             sync_mt5_history_to_firebase()
             # 2. Reconcile active signals vs open MT5 positions
