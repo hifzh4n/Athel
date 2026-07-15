@@ -581,8 +581,8 @@ def analyze_market(symbol):
     last_dir = last_published_direction.get(symbol, "NONE")
     
     time_since_last  = current_time - last_time
-    # 90-second cooldown between signals (fast scalping pace)
-    cooldown_remaining = max(0, int(90 - time_since_last))
+    # No cooldown — open new trade immediately after close
+    cooldown_remaining = 0
 
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {symbol}: {current_close:.4f} | ATR:{current_atr:.4f} | ADX:{current_adx:.1f} | MTF:{mtf_trends['M15'][0]}/{mtf_trends['H1'][0]} | ST:{'B' if is_st_bullish else ('S' if is_st_bearish else '-')} | PB:{'Y' if is_near_ema20 else 'N'} | RSI:{current_rsi:.1f} | MACD:{'▲' if macd_bullish_accel else ('▼' if macd_bearish_accel else '-')} | BUY:{buy_score}/{max_score} SELL:{sell_score}/{max_score} -> {direction}")
 
