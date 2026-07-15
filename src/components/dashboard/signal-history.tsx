@@ -32,11 +32,15 @@ export function SignalHistoryCard() {
             </div>
             <div className="flex items-center justify-between font-mono text-sm">
               <span className="text-muted-foreground">Entry</span>
-              <span>{sig.entryLow.toFixed(2)} - {sig.entryHigh.toFixed(2)}</span>
+              <span>{sig.entryLow?.toFixed(2) ?? '—'} - {sig.entryHigh?.toFixed(2) ?? '—'}</span>
             </div>
             <div className="flex items-center justify-between font-mono text-sm">
               <span className="text-muted-foreground">TP1</span>
-              <span className="text-emerald-500">{sig.takeProfit1.toFixed(2)}</span>
+              <span className="text-emerald-500">{sig.takeProfit1?.toFixed(2) ?? '—'}</span>
+            </div>
+            <div className="flex items-center justify-between font-mono text-sm">
+              <span className="text-muted-foreground">SL</span>
+              <span className="text-red-500">{sig.stopLoss?.toFixed(2) ?? '—'}</span>
             </div>
           </div>
         );

@@ -38,7 +38,7 @@ export function SignalCard({ signal }: SignalCardProps) {
             <Crosshair className="w-3 h-3" /> Entry Zone
           </span>
           <p className="text-lg font-mono font-medium text-foreground tracking-wider">
-            {signal.entryLow.toFixed(2)} - {signal.entryHigh.toFixed(2)}
+            {signal.entryLow?.toFixed(2) ?? '—'} - {signal.entryHigh?.toFixed(2) ?? '—'}
           </p>
         </div>
         <div className="space-y-1 p-2 rounded inset-panel">
@@ -47,10 +47,10 @@ export function SignalCard({ signal }: SignalCardProps) {
           </span>
           <div className="space-y-1">
             <p className="text-sm font-mono flex justify-between tracking-wider">
-              <span>TP1</span> <span className="text-emerald-400 drop-shadow-[0_0_3px_rgba(16,185,129,0.5)]">{signal.takeProfit1.toFixed(2)}</span>
+              <span>TP1</span> <span className="text-emerald-400 drop-shadow-[0_0_3px_rgba(16,185,129,0.5)]">{signal.takeProfit1?.toFixed(2) ?? '—'}</span>
             </p>
             <p className="text-sm font-mono flex justify-between tracking-wider">
-              <span>TP2</span> <span className="text-emerald-400 drop-shadow-[0_0_3px_rgba(16,185,129,0.5)]">{signal.takeProfit2.toFixed(2)}</span>
+              <span>TP2</span> <span className="text-emerald-400 drop-shadow-[0_0_3px_rgba(16,185,129,0.5)]">{signal.takeProfit2?.toFixed(2) ?? '—'}</span>
             </p>
           </div>
         </div>
@@ -58,7 +58,7 @@ export function SignalCard({ signal }: SignalCardProps) {
           <span className="text-xs text-muted-foreground flex items-center gap-1">
             <ShieldAlert className="w-3 h-3 text-red-500 drop-shadow-[0_0_5px_rgba(239,68,68,0.8)]" /> Stop Loss
           </span>
-          <p className="text-lg font-mono text-red-400 tracking-wider drop-shadow-[0_0_3px_rgba(239,68,68,0.5)]">{signal.stopLoss.toFixed(2)}</p>
+          <p className="text-lg font-mono text-red-400 tracking-wider drop-shadow-[0_0_3px_rgba(239,68,68,0.5)]">{signal.stopLoss?.toFixed(2) ?? '—'}</p>
         </div>
         <div className="space-y-1 p-2 rounded inset-panel">
           <span className="text-xs text-muted-foreground flex items-center gap-1">

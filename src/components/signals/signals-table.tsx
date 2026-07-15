@@ -117,11 +117,11 @@ export function SignalsTable() {
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs">{sig.entryLow.toFixed(2)} – {sig.entryHigh.toFixed(2)}</td>
-                    <td className="px-4 py-3 font-mono text-xs text-emerald-400">{sig.takeProfit1.toFixed(2)}</td>
-                    <td className="px-4 py-3 font-mono text-xs text-red-400">{sig.stopLoss.toFixed(2)}</td>
+                    <td className="px-4 py-3 font-mono text-xs">{sig.entryLow?.toFixed(2) ?? '—'} – {sig.entryHigh?.toFixed(2) ?? '—'}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-emerald-400">{sig.takeProfit1?.toFixed(2) ?? '—'}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-red-400">{sig.stopLoss?.toFixed(2) ?? '—'}</td>
                     <td className="px-4 py-3 font-mono text-xs text-primary">
-                      {sig.riskReward ? `1:${sig.riskReward.toFixed(1)}` : "—"}
+                      {sig.riskReward ? `1:${sig.riskReward?.toFixed(1)}` : "—"}
                     </td>
                     <td className="px-4 py-3">
                       <Badge variant="outline" className="border-primary/30 text-primary text-xs">{sig.grade}</Badge>
