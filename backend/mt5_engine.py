@@ -422,8 +422,9 @@ def analyze_market(symbol):
     # ATR too high = explosive/news spike (unpredictable, dangerous)
     # NOTE: These fixed values are tuned for XAUUSD. Synthetic indices have massive ATRs.
     if "XAU" in symbol.upper() or "GOLD" in symbol.upper():
-        ATR_MIN = 2.0
-        ATR_MAX = 25.0
+        # M1 timeframe has much smaller candles than M5, so ATR limits must be lowered.
+        ATR_MIN = 0.5
+        ATR_MAX = 8.0
         if current_atr < ATR_MIN or current_atr > ATR_MAX:
             print(f"   -> [{symbol}] ATR={current_atr:.2f} outside safe range [{ATR_MIN}-{ATR_MAX}]. Skipping.")
             return
