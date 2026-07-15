@@ -689,7 +689,7 @@ def analyze_market(symbol):
 
         msg  = f"🚨 *NEW SETUP DETECTED* 🚨\n\n"
         msg += f"Symbol: *{symbol}*  |  Direction: *{direction}*\n"
-        msg += f"Grade: *{grade}*  |  Confidence: *{confidence}%*  |  RR: *1:{rr}*\n"
+        msg += f"Grade: *{grade}*  |  Confidence: *{confidence_score}%*  |  RR: *1:{rr}*\n"
         msg += f"Confluences: *{confluences}/8*  |  ATR: *{current_atr:.1f}*\n\n"
         msg += f"🎯 Entry: {entry_low:.2f} - {entry_high:.2f}\n"
         msg += f"✅ TP1: {take_profit1:.2f}  |  TP2: {take_profit2:.2f}\n"
