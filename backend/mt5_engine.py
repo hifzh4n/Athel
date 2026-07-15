@@ -310,7 +310,7 @@ def get_ai_analysis(symbol, direction, price, rsi, macd_hist, mtf_trends, conflu
 
     # Using 9router tunnel format which mirrors OpenAI Chat Completions API
     payload = {
-        "model": "google/gemini-2.5-flash", 
+        "model": "gpt-4.1", 
         "messages": [
             {"role": "user", "content": prompt}
         ]
