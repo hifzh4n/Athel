@@ -626,8 +626,8 @@ def analyze_market(symbol):
     # Target: +$2.50 TP  |  -$2.00 SL  (per 0.01 lot)
     # Dynamically computed using MT5 tick value so it's accurate for every symbol.
     lot_size = float(os.getenv("AUTO_TRADE_LOT", "0.01"))
-    TARGET_TP_USD = 2.50
-    TARGET_SL_USD = 2.00
+    TARGET_TP_USD = 1.00
+    TARGET_SL_USD = 1.00
 
     tp1_distance = dollars_to_price_distance(symbol, lot_size, TARGET_TP_USD)
     tp2_distance = dollars_to_price_distance(symbol, lot_size, TARGET_TP_USD * 2)  # $5 runner
