@@ -528,10 +528,10 @@ def analyze_market(symbol):
     is_st_bullish = (current_st_dir == 1.0)
     is_st_bearish = (current_st_dir == -1.0)
 
-    # ── Pullback Filter: price must be within 1.0x ATR of EMA20 ───────────────
-    # Prevents chasing entries far from the mean — a key scalping discipline.
+    # ── Pullback Filter: price must be within 2.0x ATR of EMA20 ───────────────
+    # M1 ATR is very small, so 1.0x is too tight. 2.0x allows normal breathing room.
     dist_to_ema20 = abs(current_close - current_ema20)
-    is_near_ema20 = dist_to_ema20 <= (current_atr * 1.0)
+    is_near_ema20 = dist_to_ema20 <= (current_atr * 2.0)
 
     buy_score = 0
     if current_close > current_ema50: buy_score += 1          # Price above M5 EMA50
@@ -569,7 +569,7 @@ def analyze_market(symbol):
     # 3-min cooldown between signals. Resets to 0 instantly when a trade closes.
     cooldown_remaining = max(0, int(180 - time_since_last))
 
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {symbol}: {current_close:.2f} | ATR:{current_atr:.1f} | ADX:{current_adx:.1f} | MTF:-/{mtf_trends['M5'][0]}/{mtf_trends['H1'][0]}/- | RSI:{current_rsi:.1f} | MACD_X:{'B' if macd_bullish_cross else ('S' if macd_bearish_cross else '-')} | BUY:{buy_score}/8 SELL:{sell_score}/8 -> {direction}")
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] {symbol}: {current_close:.2f} | ATR:{current_atr:.1f} | ADX:{current_adx:.1f} | MTF:-/{mtf_trends['M5'][0]}/{mtf_trends['H1'][0]}/- | ST:{'B' if is_st_bullish else ('S' if is_st_bearish else '-')} | PB:{'Y' if is_near_ema20 else 'N'} | RSI:{current_rsi:.1f} | MACD_X:{'B' if macd_bullish_cross else ('S' if macd_bearish_cross else '-')} | BUY:{buy_score}/8 SELL:{sell_score}/8 -> {direction}")
 
     # Skip if cooldown active
     if direction != "NONE" and cooldown_remaining > 0:
