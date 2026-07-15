@@ -285,10 +285,10 @@ def get_alpha_vantage_sentiment():
         print(f"Alpha Vantage Error: {e}")
     return av_cached_data
 
-# ─── Gemini AI ─────────────────────────────────────────────────────────────────
+# ─── AI Analysis (9Router / OpenAI format) ─────────────────────────────────────────────────────────────────
 
-def get_gemini_analysis(symbol, direction, price, rsi, macd_hist, mtf_trends, confluences, av_sentiment, atr):
-    api_key = os.getenv("GEMINI_API_KEY")
+def get_ai_analysis(symbol, direction, price, rsi, macd_hist, mtf_trends, confluences, av_sentiment, atr):
+    api_key = os.getenv("OPENROUTER_API_KEY")
     if not api_key:
         return "AI Analysis unavailable."
 
@@ -303,25 +303,30 @@ def get_gemini_analysis(symbol, direction, price, rsi, macd_hist, mtf_trends, co
         prompt += "Top Headlines: " + ", ".join([h['title'] for h in av_sentiment['headlines']]) + ". "
         
     prompt += "Write 2 concise sentences explaining why this is a high-probability setup. Plain text only, no bullet points or markdown."
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
 
-    payload = {"contents": [{"parts": [{"text": prompt}]}]}
-    models_to_try = [
-        "gemini-1.5-flash",
-        "gemini-2.0-flash-exp",
-        "gemini-pro",
-        "gemini-1.0-pro"
-    ]
+    # Using 9router tunnel format which mirrors OpenAI Chat Completions API
+    payload = {
+        "model": "google/gemini-2.5-flash", 
+        "messages": [
+            {"role": "user", "content": prompt}
+        ]
+    }
     
-    for model in models_to_try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-        try:
-            res = requests.post(url, json=payload, timeout=10)
-            if res.status_code == 200:
-                return res.json()['candidates'][0]['content']['parts'][0]['text'].strip()
-        except Exception:
-            continue
-            
-    return "AI Analysis temporarily unavailable. (Check API Key)"
+    url = "https://rhzl5bm.abc-tunnel.us/v1/chat/completions"
+    try:
+        res = requests.post(url, headers=headers, json=payload, timeout=15)
+        if res.status_code == 200:
+            return res.json()['choices'][0]['message']['content'].strip()
+        else:
+            print(f"AI API Error {res.status_code}: {res.text}")
+    except Exception as e:
+        print(f"AI Request Failed: {e}")
+        
+    return "AI analysis failed."
 
 # ─── Dynamic Confidence & RR ───────────────────────────────────────────────────
 
