@@ -61,7 +61,7 @@ def push_live_price(symbol, bid, ask):
             }
         })
     except Exception as e:
-        pass
+        print(f"   -> [LIVE PRICE] Firebase update failed for {symbol}: {e}")
 
 def save_state_to_firebase():
     """Persist the cooldown state so restarts don't reset it."""
@@ -498,11 +498,12 @@ def analyze_market(symbol):
                 send_telegram_message(f"{emoji} *TRADE CLOSED* {emoji}\n\nSymbol: *{sig_data.get('symbol', symbol)}*\nDirection: *{direction}*\nResult: *{status}*\nClose Price: {current_live_price:.2f}")
             else:
                 # ── TRAILING SL: Move to Break-Even ─────────────────────────────
-                # Once price moves 0.5x ATR in our favor, push SL to entry price.
-                # We can never lose this trade anymore.
+                # FIX #8: Trigger raised from 0.5x to 0.75x ATR.
+                # 0.5x was too tight — price naturally breathes that far and would
+                # immediately stop out at break-even. 0.75x gives the trade room.
                 entry    = sig_data.get('price', 0)
                 sig_atr  = sig_data.get('atr', current_atr)
-                be_trigger = sig_atr * 0.5  # break-even trigger distance
+                be_trigger = sig_atr * 0.75  # break-even trigger distance
                 already_be = sig_data.get('breakeven_set', False)
 
                 if not already_be:
@@ -563,30 +564,38 @@ def analyze_market(symbol):
     dist_to_ema20 = abs(current_close - current_ema20)
     is_near_ema20 = dist_to_ema20 <= (current_atr * pullback_multiplier)
 
+    # FIX #3: MACD zero-cross is a stronger signal than acceleration alone — score it separately
+    # FIX #4: is_near_ema20 (pullback) now counts toward score instead of being unused
     buy_score = 0
-    if current_close > current_ema50: buy_score += 1
-    if current_ema20 > current_ema50: buy_score += 1
-    if 35 < current_rsi < 72:         buy_score += 1
-    if macd_bullish_accel:             buy_score += 1
-    if trend_m15 == "BULLISH":         buy_score += 1
-    if not is_synthetic and "Bullish" in sentiment_label:   buy_score += 1
+    if current_close > current_ema50:                          buy_score += 1
+    if current_ema20 > current_ema50:                          buy_score += 1
+    if 35 < current_rsi < 72:                                  buy_score += 1
+    if macd_bullish_cross:                                     buy_score += 2  # zero-cross = 2pts (strong)
+    elif macd_bullish_accel:                                   buy_score += 1  # acceleration = 1pt
+    if trend_m15 == "BULLISH":                                 buy_score += 1
+    if is_near_ema20:                                          buy_score += 1  # pullback to EMA = quality entry
+    if not is_synthetic and "Bullish" in sentiment_label:      buy_score += 1
 
     sell_score = 0
-    if current_close < current_ema50: sell_score += 1
-    if current_ema20 < current_ema50: sell_score += 1
-    if 28 < current_rsi < 65:         sell_score += 1
-    if macd_bearish_accel:             sell_score += 1
-    if trend_m15 == "BEARISH":         sell_score += 1
-    if not is_synthetic and "Bearish" in sentiment_label:   sell_score += 1
+    if current_close < current_ema50:                          sell_score += 1
+    if current_ema20 < current_ema50:                          sell_score += 1
+    if 28 < current_rsi < 65:                                  sell_score += 1
+    if macd_bearish_cross:                                     sell_score += 2  # zero-cross = 2pts (strong)
+    elif macd_bearish_accel:                                   sell_score += 1  # acceleration = 1pt
+    if trend_m15 == "BEARISH":                                 sell_score += 1
+    if is_near_ema20:                                          sell_score += 1  # pullback to EMA = quality entry
+    if not is_synthetic and "Bearish" in sentiment_label:      sell_score += 1
 
-    # Scalping: Macro + SuperTrend + 3/6 score (pullback/MACD are part of score, not strict gates)
-    direction  = "NONE"
+    # FIX #5: req_score was 3 for both branches (ternary was a no-op).
+    # Now synthetics require 3, real instruments require 4 to reduce noise.
+    # max_score updated to reflect new scoring (MACD cross can add 2pts).
+    direction   = "NONE"
     confluences = 0
-    req_score = 3 if is_synthetic else 3
-    max_score = 5 if is_synthetic else 6
+    req_score   = 3 if is_synthetic else 4
+    max_score   = 7 if is_synthetic else 8
     if is_macro_bullish and is_st_bullish and buy_score >= req_score:
         direction   = "BUY"
-        confluences = buy_score + 2
+        confluences = buy_score + 2   # +2 for H1 macro + SuperTrend alignment
     elif is_macro_bearish and is_st_bearish and sell_score >= req_score:
         direction   = "SELL"
         confluences = sell_score + 2
@@ -667,6 +676,12 @@ def analyze_market(symbol):
         entry_high   = entry_price + (current_atr * 0.2)
 
     rr = calculate_rr(entry_price, stop_loss, take_profit1)
+
+    # FIX #7: Minimum R:R gate — don't publish if the setup is worse than 1.4:1
+    # (can happen if broker's min_stop override stretches the SL)
+    if rr < 1.4:
+        print(f"   -> [{symbol}] R:R={rr} below minimum 1.4. Skipping low-quality setup.")
+        return
     confidence_score, grade = calculate_confidence_and_grade(confluences)
     ai_analysis = get_ai_analysis(symbol, direction, entry_price, current_rsi, macd_hist_closed, mtf_trends, confluences, av_sentiment, current_atr)
 
@@ -850,15 +865,34 @@ def reconcile_signals_with_mt5():
                     break
 
         if not has_open_position:
-            # Position is closed in MT5 but still ACTIVE in Firebase — resolve it
-            tick = mt5.symbol_info_tick(symbol)
-            current_price = (tick.bid + tick.ask) / 2 if tick else entry_price
+            # FIX #2: Check MT5 deal history for the actual close reason instead
+            # of guessing from current price (which may have bounced since close).
+            from_date = datetime.now(timezone.utc) - timedelta(hours=24)
+            to_date   = datetime.now(timezone.utc)
+            deals = mt5.history_deals_get(from_date, to_date)
+            status = None
+            if deals:
+                # Find the exit deal for this symbol placed by Athel
+                for deal in reversed(deals):
+                    if deal.symbol == symbol and deal.entry == mt5.DEAL_ENTRY_OUT:
+                        # MT5 deal reason: DEAL_REASON_TP=3, DEAL_REASON_SL=4
+                        if deal.reason == mt5.DEAL_REASON_TP:
+                            status = "COMPLETED_TP"
+                        elif deal.reason == mt5.DEAL_REASON_SL:
+                            status = "COMPLETED_SL"
+                        else:
+                            # Manual close or other reason — use profit sign
+                            status = "COMPLETED_TP" if deal.profit > 0 else "COMPLETED_SL"
+                        break
 
-            # Determine outcome: did price hit TP or SL side?
-            if direction == "BUY":
-                status = "COMPLETED_TP" if current_price >= tp1 else "COMPLETED_SL"
-            else:
-                status = "COMPLETED_TP" if current_price <= tp1 else "COMPLETED_SL"
+            if status is None:
+                # Fallback: guess from current price vs TP (original behaviour)
+                tick = mt5.symbol_info_tick(symbol)
+                current_price = (tick.bid + tick.ask) / 2 if tick else entry_price
+                if direction == "BUY":
+                    status = "COMPLETED_TP" if current_price >= tp1 else "COMPLETED_SL"
+                else:
+                    status = "COMPLETED_TP" if current_price <= tp1 else "COMPLETED_SL"
 
             print(f"   -> [RECONCILE] {symbol} signal {sig_id} not in MT5 positions. Marking as {status}.")
             update_signal_status(sig_id, status)
