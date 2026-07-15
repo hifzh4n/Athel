@@ -432,7 +432,7 @@ def analyze_market(symbol):
         elif "JPY" in symbol.upper():
             ATR_MIN, ATR_MAX = 0.05, 0.50
         else:
-            ATR_MIN, ATR_MAX = 0.0005, 0.0050
+            ATR_MIN, ATR_MAX = 0.0003, 0.0050
 
         if current_atr < ATR_MIN or current_atr > ATR_MAX:
             print(f"   -> [{symbol}] ATR={current_atr:.4f} outside safe range [{ATR_MIN}-{ATR_MAX}]. Skipping.")
@@ -443,9 +443,9 @@ def analyze_market(symbol):
     if tick:
         current_live_price = (tick.bid + tick.ask) / 2
         spread = tick.ask - tick.bid
-        max_spread = current_atr * 0.20
+        max_spread = current_atr * 0.30
         if spread > max_spread:
-            print(f"   -> [{symbol}] Spread={spread:.4f} exceeds max safe spread {max_spread:.4f} (20% of ATR). Skipping.")
+            print(f"   -> [{symbol}] Spread={spread:.4f} exceeds max safe spread {max_spread:.4f} (30% of ATR). Skipping.")
             return
 
     # ── ADX Trend Filter ─────────────────────────────────────────────────
