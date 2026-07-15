@@ -586,13 +586,14 @@ def analyze_market(symbol):
     if is_near_ema20:                                          sell_score += 1  # pullback to EMA = quality entry
     if not is_synthetic and "Bearish" in sentiment_label:      sell_score += 1
 
-    # FIX #5: req_score was 3 for both branches (ternary was a no-op).
-    # Now synthetics require 3, real instruments require 4 to reduce noise.
-    # max_score updated to reflect new scoring (MACD cross can add 2pts).
+    # ── PERFECT SETUP FILTER ──
+    # User requested ONLY perfectly confirmed setups.
+    # Max possible score is 7 (synthetic) or 8 (forex). We demand a near-perfect score.
     direction   = "NONE"
     confluences = 0
-    req_score   = 3 if is_synthetic else 4
+    req_score   = 6 if is_synthetic else 7
     max_score   = 7 if is_synthetic else 8
+    
     if is_macro_bullish and is_st_bullish and buy_score >= req_score:
         direction   = "BUY"
         confluences = buy_score + 2   # +2 for H1 macro + SuperTrend alignment
