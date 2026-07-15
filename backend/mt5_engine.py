@@ -310,7 +310,7 @@ def get_ai_analysis(symbol, direction, price, rsi, macd_hist, mtf_trends, conflu
 
     # Using 9router tunnel format which mirrors OpenAI Chat Completions API
     payload = {
-        "model": "gpt-4.1", 
+        "model": "gpt-4o", 
         "messages": [
             {"role": "user", "content": prompt}
         ]
@@ -660,7 +660,7 @@ def analyze_market(symbol):
         last_published_time[symbol] = current_time
         last_published_direction[symbol] = direction
         save_state_to_firebase()
-        place_auto_trade(symbol, direction, entry_price, stop_loss, take_profit1)
+        place_auto_trade(symbol, direction, entry_price, stop_loss, take_profit1, current_atr)
 
         msg  = f"🚨 *NEW SETUP DETECTED* 🚨\n\n"
         msg += f"Symbol: *{symbol}*  |  Direction: *{direction}*\n"
@@ -674,7 +674,7 @@ def analyze_market(symbol):
 
 # ─── Auto Trade ───────────────────────────────────────────────────────────────
 
-def place_auto_trade(symbol, direction, entry_price, stop_loss, take_profit1):
+def place_auto_trade(symbol, direction, entry_price, stop_loss, take_profit1, atr):
     """
     Automatically places a market order on MT5 when a new signal is detected.
     Only runs if AUTO_TRADE=true is set in .env
@@ -702,14 +702,38 @@ def place_auto_trade(symbol, direction, entry_price, stop_loss, take_profit1):
     price      = tick.ask if direction == "BUY" else tick.bid
     deviation  = 20  # max slippage in points
 
+    # Recompute SL/TP from the LIVE fill price to prevent 'Invalid stops' errors.
+    # Using ATR-based distances anchored to the actual execution price.
+    sym_atr_sl  = round(atr * 1.0, symbol_info.digits)
+    sym_atr_tp1 = round(atr * 1.2, symbol_info.digits)
+    if direction == "BUY":
+        live_sl  = round(price - sym_atr_sl,  symbol_info.digits)
+        live_tp1 = round(price + sym_atr_tp1, symbol_info.digits)
+    else:
+        live_sl  = round(price + sym_atr_sl,  symbol_info.digits)
+        live_tp1 = round(price - sym_atr_tp1, symbol_info.digits)
+
+    # Ensure minimum stop distance respected by broker
+    min_stop = symbol_info.trade_stops_level * symbol_info.point
+    if direction == "BUY":
+        if price - live_sl < min_stop:
+            live_sl = round(price - min_stop * 1.5, symbol_info.digits)
+        if live_tp1 - price < min_stop:
+            live_tp1 = round(price + min_stop * 1.5, symbol_info.digits)
+    else:
+        if live_sl - price < min_stop:
+            live_sl = round(price + min_stop * 1.5, symbol_info.digits)
+        if price - live_tp1 < min_stop:
+            live_tp1 = round(price - min_stop * 1.5, symbol_info.digits)
+
     request = {
         "action":    mt5.TRADE_ACTION_DEAL,
         "symbol":    symbol,
         "volume":    lot,
         "type":      order_type,
         "price":     price,
-        "sl":        round(stop_loss, symbol_info.digits),
-        "tp":        round(take_profit1, symbol_info.digits),
+        "sl":        live_sl,
+        "tp":        live_tp1,
         "deviation": deviation,
         "magic":     20250715,
         "comment":   "Athel AutoTrade",
@@ -726,12 +750,12 @@ def place_auto_trade(symbol, direction, entry_price, stop_loss, take_profit1):
         return
 
     if result.retcode == mt5.TRADE_RETCODE_DONE:
-        print(f"   -> [AUTO TRADE] ✅ ORDER PLACED — {direction} {lot} lot {symbol} @ {result.price:.2f} | SL:{stop_loss:.2f} TP:{take_profit1:.2f} | Ticket:#{result.order}")
+        print(f"   -> [AUTO TRADE] ✅ ORDER PLACED — {direction} {lot} lot {symbol} @ {result.price:.5f} | SL:{live_sl} TP:{live_tp1} | Ticket:#{result.order}")
         send_telegram_message(
             f"🤖 *AUTO TRADE EXECUTED* 🤖\n\n"
             f"Symbol: *{symbol}*  |  Direction: *{direction}*\n"
-            f"Lot: *{lot}*  |  Price: *{result.price:.2f}*\n"
-            f"SL: *{stop_loss:.2f}*  |  TP: *{take_profit1:.2f}*\n"
+            f"Lot: *{lot}*  |  Price: *{result.price:.5f}*\n"
+            f"SL: *{live_sl}*  |  TP: *{live_tp1}*\n"
             f"Ticket: *#{result.order}*"
         )
     else:
