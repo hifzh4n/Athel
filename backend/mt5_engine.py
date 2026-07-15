@@ -363,63 +363,59 @@ def analyze_market(symbol):
     if not is_valid_trading_session(symbol):
         return
 
-    # 1. Fetch Multi-Timeframe Data (including H4 for FIX #6)
-    df_m5  = get_data(symbol, mt5.TIMEFRAME_M5,  100)
-    df_m15 = get_data(symbol, mt5.TIMEFRAME_M15, 100)
-    df_h1  = get_data(symbol, mt5.TIMEFRAME_H1,  100)
-    df_h4  = get_data(symbol, mt5.TIMEFRAME_H4,  100)
+    # ── SCALPING ARCHITECTURE: M1 Entry + M5 Trend + H1 Macro ───────────────────
+    # M1  → Entry signals: MACD, RSI, EMA, ATR, ADX (fast, tight SL/TP)
+    # M5  → Intermediate trend: SuperTrend, EMA50 (noise filter)
+    # H1  → Macro alignment: don't fight the big trend
+    df_m1 = get_data(symbol, mt5.TIMEFRAME_M1,  150)
+    df_m5 = get_data(symbol, mt5.TIMEFRAME_M5,  100)
+    df_h1 = get_data(symbol, mt5.TIMEFRAME_H1,  100)
 
-    if df_m5 is None or df_m15 is None or df_h1 is None or df_h4 is None:
+    if df_m1 is None or df_m5 is None or df_h1 is None:
         print("Warning: Failed to fetch one or more timeframes. Skipping cycle.")
         return
 
-    # ── FIX #2: Use CLOSED candle (iloc[-2]) NOT live candle (iloc[-1]) ───────
-    # iloc[-1] = currently forming (unreliable). iloc[-2] = last fully closed candle.
+    # Use the last CLOSED candle (not the live forming candle)
     IDX = -2
 
-    # MTF EMA50 Trends — all based on last CLOSED candle
-    df_m5['ema50']  = ta.ema(df_m5['close'],  length=50)
-    df_m15['ema50'] = ta.ema(df_m15['close'], length=50)
-    df_h1['ema50']  = ta.ema(df_h1['close'],  length=50)
-    df_h4['ema50']  = ta.ema(df_h4['close'],  length=50)
+    # ── Trend context from M5 and H1 ─────────────────────────────────────────
+    df_m5['ema50'] = ta.ema(df_m5['close'], length=50)
+    df_h1['ema50'] = ta.ema(df_h1['close'], length=50)
 
-    trend_m5  = "BULLISH" if float(df_m5['close'].iloc[IDX])  > float(df_m5['ema50'].iloc[IDX])  else "BEARISH"
-    trend_m15 = "BULLISH" if float(df_m15['close'].iloc[IDX]) > float(df_m15['ema50'].iloc[IDX]) else "BEARISH"
-    trend_h1  = "BULLISH" if float(df_h1['close'].iloc[IDX])  > float(df_h1['ema50'].iloc[IDX])  else "BEARISH"
-    trend_h4  = "BULLISH" if float(df_h4['close'].iloc[IDX])  > float(df_h4['ema50'].iloc[IDX])  else "BEARISH"
-    mtf_trends = {"M5": trend_m5, "M15": trend_m15, "H1": trend_h1, "H4": trend_h4}
+    trend_m5 = "BULLISH" if float(df_m5['close'].iloc[IDX]) > float(df_m5['ema50'].iloc[IDX]) else "BEARISH"
+    trend_h1 = "BULLISH" if float(df_h1['close'].iloc[IDX]) > float(df_h1['ema50'].iloc[IDX]) else "BEARISH"
+    mtf_trends = {"M1": "—", "M5": trend_m5, "H1": trend_h1, "H4": "—"}
 
-    # M5 Indicators (Fast Scalping) — based on CLOSED candle
-    df_m5['ema20'] = ta.ema(df_m5['close'], length=20)
-    df_m5['rsi']   = ta.rsi(df_m5['close'], length=14)
-    macd_df         = ta.macd(df_m5['close'], fast=12, slow=26, signal=9)
-    
-    # ── SUPERTREND (10, 3.0) ──────────────────────────────────────────────────
+    # ── SuperTrend on M5 (trend direction filter, less noisy than M1) ────────
     st_df = ta.supertrend(df_m5['high'], df_m5['low'], df_m5['close'], length=10, multiplier=3.0)
 
-    # ── ATR + ADX ─────────────────────────────────────────────────────────
-    df_m5['atr'] = ta.atr(df_m5['high'], df_m5['low'], df_m5['close'], length=14)
-    current_atr   = float(df_m5['atr'].iloc[IDX])
+    # ── All entry indicators on M1 (fast scalp signals) ──────────────────────
+    df_m1['ema20'] = ta.ema(df_m1['close'], length=20)
+    df_m1['ema50'] = ta.ema(df_m1['close'], length=50)
+    df_m1['rsi']   = ta.rsi(df_m1['close'], length=14)
+    macd_df        = ta.macd(df_m1['close'], fast=12, slow=26, signal=9)
 
-    adx_df      = ta.adx(df_m5['high'], df_m5['low'], df_m5['close'], length=14)
+    # ── ATR + ADX on M1 (tight SL/TP, trend strength) ────────────────────────
+    df_m1['atr'] = ta.atr(df_m1['high'], df_m1['low'], df_m1['close'], length=14)
+    current_atr   = float(df_m1['atr'].iloc[IDX])
+
+    adx_df      = ta.adx(df_m1['high'], df_m1['low'], df_m1['close'], length=14)
     current_adx = float(adx_df.iloc[IDX, 0]) if adx_df is not None and len(adx_df.columns) > 0 else 0
 
-    # ── MACD: True crossover detection ─────────────────────────────────────
-    # Crossover = MACD just flipped from negative to positive (or vice versa).
-    # This is a rare, high-quality event. Direction-only fires every candle = spam.
-    macd_hist_prev    = float(macd_df.iloc[-3, 1])  # 2 candles ago
-    macd_hist_closed  = float(macd_df.iloc[IDX, 1]) # last closed candle
-    macd_bullish_cross = macd_hist_prev <= 0 and macd_hist_closed > 0  # just crossed UP
-    macd_bearish_cross = macd_hist_prev >= 0 and macd_hist_closed < 0  # just crossed DOWN
-    # Bonus: histogram accelerating (momentum building)
+    # ── MACD Crossover on M1 ──────────────────────────────────────────────────
+    macd_hist_prev   = float(macd_df.iloc[-3, 1])
+    macd_hist_closed = float(macd_df.iloc[IDX, 1])
+    macd_bullish_cross = macd_hist_prev <= 0 and macd_hist_closed > 0
+    macd_bearish_cross = macd_hist_prev >= 0 and macd_hist_closed < 0
     macd_bullish_accel = macd_hist_closed > macd_hist_prev and macd_hist_closed > 0
     macd_bearish_accel = macd_hist_closed < macd_hist_prev and macd_hist_closed < 0
 
-    current_close  = float(df_m5['close'].iloc[IDX])
-    current_ema20  = float(df_m5['ema20'].iloc[IDX])
-    current_ema50  = float(df_m5['ema50'].iloc[IDX])
-    current_rsi    = float(df_m5['rsi'].iloc[IDX])
-    current_st_dir = float(st_df.iloc[IDX, 1]) # Column 1 is Direction (1 or -1)
+    current_close  = float(df_m1['close'].iloc[IDX])
+    current_ema20  = float(df_m1['ema20'].iloc[IDX])
+    current_ema50  = float(df_m1['ema50'].iloc[IDX])
+    current_rsi    = float(df_m1['rsi'].iloc[IDX])
+    current_st_dir = float(st_df.iloc[IDX, 1])   # SuperTrend direction from M5
+
 
     # ── FIX #7: Volatility Filter ─────────────────────────────────────────────
     # ATR too low = dead market (wide spread eats profit)
