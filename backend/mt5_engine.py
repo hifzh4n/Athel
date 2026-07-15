@@ -763,6 +763,63 @@ def place_auto_trade(symbol, direction, entry_price, stop_loss, take_profit1, at
         print(f"   -> [AUTO TRADE] FAILED — {err_msg}")
         send_telegram_message(f"⚠️ *AUTO TRADE FAILED*\n{symbol} {direction}\nError: {err_msg}")
 
+# ─── MT5 Reconciliation ────────────────────────────────────────────────────────
+
+def reconcile_signals_with_mt5():
+    """
+    Cross-check all ACTIVE signals in Firebase against real open MT5 positions.
+    If a signal is marked ACTIVE in Firebase but the MT5 position is already
+    closed (hit TP/SL by broker), automatically mark it as COMPLETED in Firebase.
+    This prevents 'ghost' signals from piling up after crashes/restarts.
+    """
+    global active_signals
+    if not active_signals:
+        return
+
+    # Get all currently open Athel positions from MT5
+    all_positions = mt5.positions_get()
+    open_tickets = set()
+    if all_positions:
+        for pos in all_positions:
+            if pos.comment == "Athel AutoTrade":
+                open_tickets.add(pos.ticket)
+
+    for sig_id in list(active_signals.keys()):
+        sig = active_signals[sig_id]
+        symbol = sig.get('symbol', '')
+        direction = sig.get('direction', '')
+        entry_price = sig.get('price', 0)
+        tp1 = sig.get('takeProfit1', 0)
+        sl  = sig.get('stopLoss', 0)
+
+        # Check if there's a matching open MT5 position for this signal
+        # We match by symbol + direction since we track one signal per symbol
+        has_open_position = False
+        if all_positions:
+            for pos in all_positions:
+                if pos.comment == "Athel AutoTrade" and pos.symbol == symbol:
+                    has_open_position = True
+                    break
+
+        if not has_open_position:
+            # Position is closed in MT5 but still ACTIVE in Firebase — resolve it
+            tick = mt5.symbol_info_tick(symbol)
+            current_price = (tick.bid + tick.ask) / 2 if tick else entry_price
+
+            # Determine outcome: did price hit TP or SL side?
+            if direction == "BUY":
+                status = "COMPLETED_TP" if current_price >= tp1 else "COMPLETED_SL"
+            else:
+                status = "COMPLETED_TP" if current_price <= tp1 else "COMPLETED_SL"
+
+            print(f"   -> [RECONCILE] {symbol} signal {sig_id} not in MT5 positions. Marking as {status}.")
+            update_signal_status(sig_id, status)
+            del active_signals[sig_id]
+            last_published_direction[symbol] = "NONE"
+            last_published_time[symbol] = 0
+            emoji = "✅" if status == "COMPLETED_TP" else "❌"
+            send_telegram_message(f"{emoji} *TRADE CLOSED (Reconciled)* {emoji}\n\nSymbol: *{symbol}*\nDirection: *{direction}*\nResult: *{status}*")
+
 # ─── Main Loop ─────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -773,6 +830,8 @@ if __name__ == "__main__":
     while True:
         try:
             target_symbols = os.getenv("SYMBOLS", "XAUUSD").split(",")
+            # Reconcile Firebase state vs real MT5 open positions first
+            reconcile_signals_with_mt5()
             for sym in target_symbols:
                 analyze_market(sym.strip())
             consecutive_errors = 0
