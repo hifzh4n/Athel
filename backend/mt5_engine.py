@@ -401,11 +401,13 @@ def analyze_market(symbol):
     df_m5['atr'] = ta.atr(df_m5['high'], df_m5['low'], df_m5['close'], length=14)
     current_atr   = float(df_m5['atr'].iloc[IDX])
 
-    # ── FIX #5: True MACD CROSSOVER detection (not just value) ───────────────
+    # ── MACD: Direction-based (not crossover) for faster scalp signals ──────────
     macd_hist_prev    = float(macd_df.iloc[-3, 1])  # 2 candles ago
     macd_hist_closed  = float(macd_df.iloc[IDX, 1]) # last closed candle
-    macd_bullish_cross = macd_hist_prev <= 0 and macd_hist_closed > 0  # crossed UP
-    macd_bearish_cross = macd_hist_prev >= 0 and macd_hist_closed < 0  # crossed DOWN
+    macd_bullish_cross = macd_hist_closed > 0        # MACD histogram positive = bullish momentum
+    macd_bearish_cross = macd_hist_closed < 0        # MACD histogram negative = bearish momentum
+    macd_bullish_accel = macd_hist_closed > macd_hist_prev  # Histogram growing (accelerating up)
+    macd_bearish_accel = macd_hist_closed < macd_hist_prev  # Histogram shrinking (accelerating down)
 
     current_close  = float(df_m5['close'].iloc[IDX])
     current_ema20  = float(df_m5['ema20'].iloc[IDX])
@@ -468,34 +470,35 @@ def analyze_market(symbol):
     is_st_bullish = (current_st_dir == 1.0)
     is_st_bearish = (current_st_dir == -1.0)
 
-    # ── FIX: Pullback Filter (Don't buy the top) ─────────────────────────────
-    # Price must be within 0.8 ATR of the EMA20 to ensure we are entering on a pullback or early crossover.
+    # ── Pullback Filter: widened to 2.0x ATR for more entry opportunities ───────
     dist_to_ema20 = abs(current_close - current_ema20)
-    is_near_ema20 = dist_to_ema20 <= (current_atr * 0.8)
+    is_near_ema20 = dist_to_ema20 <= (current_atr * 2.0)
 
     buy_score = 0
     if current_close > current_ema50: buy_score += 1          # Price above M5 EMA50
     if current_ema20 > current_ema50: buy_score += 1          # EMA20 > EMA50 (bullish structure)
-    if 40 < current_rsi < 65:         buy_score += 1          # RSI in healthy buy zone
-    if macd_bullish_cross:             buy_score += 1          # MACD just crossed UP (strong signal)
+    if 35 < current_rsi < 70:         buy_score += 1          # RSI in healthy buy zone
+    if macd_bullish_cross:             buy_score += 1          # MACD histogram positive
+    if macd_bullish_accel:             buy_score += 1          # MACD accelerating upward
     if trend_m5  == "BULLISH":         buy_score += 1          # M5  micro-trend aligned
     if "Bullish" in sentiment_label:   buy_score += 1          # Macro news aligned
 
     sell_score = 0
     if current_close < current_ema50: sell_score += 1
     if current_ema20 < current_ema50: sell_score += 1
-    if 35 < current_rsi < 60:         sell_score += 1
-    if macd_bearish_cross:             sell_score += 1          # MACD just crossed DOWN
+    if 30 < current_rsi < 65:         sell_score += 1
+    if macd_bearish_cross:             sell_score += 1          # MACD histogram negative
+    if macd_bearish_accel:             sell_score += 1          # MACD accelerating downward
     if trend_m5  == "BEARISH":         sell_score += 1
     if "Bearish" in sentiment_label:   sell_score += 1
 
-    # Require Macro Alignment + SuperTrend + Pullback proximity + at least 4/6 micro confluence points
+    # Require Macro Alignment + SuperTrend + Pullback proximity + at least 3/7 micro confluence points
     direction  = "NONE"
     confluences = 0
-    if is_macro_bullish and is_st_bullish and is_near_ema20 and buy_score >= 4 and sell_score < buy_score:
+    if is_macro_bullish and is_st_bullish and is_near_ema20 and buy_score >= 3 and sell_score < buy_score:
         direction   = "BUY"
-        confluences = buy_score + 2 # +2 for H1/H4 so UI still shows out of 8
-    elif is_macro_bearish and is_st_bearish and is_near_ema20 and sell_score >= 4 and sell_score > buy_score:
+        confluences = buy_score + 2
+    elif is_macro_bearish and is_st_bearish and is_near_ema20 and sell_score >= 3 and sell_score > buy_score:
         direction   = "SELL"
         confluences = sell_score + 2
 
@@ -504,7 +507,7 @@ def analyze_market(symbol):
     last_dir = last_published_direction.get(symbol, "NONE")
     
     time_since_last  = current_time - last_time
-    cooldown_remaining = max(0, int(900 - time_since_last))
+    cooldown_remaining = max(0, int(300 - time_since_last))  # 5-min cooldown for scalping
 
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {symbol}: {current_close:.2f} | ATR:{current_atr:.1f} | MTF:{trend_m5[0]}/{trend_m15[0]}/{trend_h1[0]}/{trend_h4[0]} | RSI:{current_rsi:.1f} | MACD_X:{'B' if macd_bullish_cross else ('S' if macd_bearish_cross else '-')} | BUY:{buy_score}/8 SELL:{sell_score}/8 -> {direction}")
 
