@@ -582,6 +582,7 @@ def analyze_market(symbol):
         last_published_time[symbol] = current_time
         last_published_direction[symbol] = direction
         save_state_to_firebase()
+        place_auto_trade(symbol, direction, entry_price, stop_loss, take_profit1)
 
         msg  = f"🚨 *NEW SETUP DETECTED* 🚨\n\n"
         msg += f"Symbol: *{symbol}*  |  Direction: *{direction}*\n"
@@ -592,6 +593,73 @@ def analyze_market(symbol):
         msg += f"🛑 SL: {stop_loss:.2f}\n\n"
         msg += f"_{ai_analysis[:200]}_"
         send_telegram_message(msg)
+
+# ─── Auto Trade ───────────────────────────────────────────────────────────────
+
+def place_auto_trade(symbol, direction, entry_price, stop_loss, take_profit1):
+    """
+    Automatically places a market order on MT5 when a new signal is detected.
+    Only runs if AUTO_TRADE=true is set in .env
+    """
+    if os.getenv("AUTO_TRADE", "false").lower() != "true":
+        return
+
+    lot = float(os.getenv("AUTO_TRADE_LOT", "0.01"))
+
+    tick = mt5.symbol_info_tick(symbol)
+    if not tick:
+        print(f"   -> [AUTO TRADE] Could not get tick for {symbol}. Skipping.")
+        return
+
+    symbol_info = mt5.symbol_info(symbol)
+    if not symbol_info:
+        print(f"   -> [AUTO TRADE] Could not get symbol info for {symbol}. Skipping.")
+        return
+
+    # Select symbol in Market Watch if not visible
+    if not symbol_info.visible:
+        mt5.symbol_select(symbol, True)
+
+    order_type = mt5.ORDER_TYPE_BUY if direction == "BUY" else mt5.ORDER_TYPE_SELL
+    price      = tick.ask if direction == "BUY" else tick.bid
+    deviation  = 20  # max slippage in points
+
+    request = {
+        "action":    mt5.TRADE_ACTION_DEAL,
+        "symbol":    symbol,
+        "volume":    lot,
+        "type":      order_type,
+        "price":     price,
+        "sl":        round(stop_loss, symbol_info.digits),
+        "tp":        round(take_profit1, symbol_info.digits),
+        "deviation": deviation,
+        "magic":     20250715,
+        "comment":   "Athel AutoTrade",
+        "type_time": mt5.ORDER_TIME_GTC,
+        "type_filling": mt5.ORDER_FILLING_IOC,
+    }
+
+    result = mt5.order_send(request)
+
+    if result is None:
+        err = mt5.last_error()
+        print(f"   -> [AUTO TRADE] FAILED — No result returned. Error: {err}")
+        send_telegram_message(f"⚠️ *AUTO TRADE FAILED*\n{symbol} {direction}\nError: {err}")
+        return
+
+    if result.retcode == mt5.TRADE_RETCODE_DONE:
+        print(f"   -> [AUTO TRADE] ✅ ORDER PLACED — {direction} {lot} lot {symbol} @ {result.price:.2f} | SL:{stop_loss:.2f} TP:{take_profit1:.2f} | Ticket:#{result.order}")
+        send_telegram_message(
+            f"🤖 *AUTO TRADE EXECUTED* 🤖\n\n"
+            f"Symbol: *{symbol}*  |  Direction: *{direction}*\n"
+            f"Lot: *{lot}*  |  Price: *{result.price:.2f}*\n"
+            f"SL: *{stop_loss:.2f}*  |  TP: *{take_profit1:.2f}*\n"
+            f"Ticket: *#{result.order}*"
+        )
+    else:
+        err_msg = f"retcode={result.retcode} ({result.comment})"
+        print(f"   -> [AUTO TRADE] FAILED — {err_msg}")
+        send_telegram_message(f"⚠️ *AUTO TRADE FAILED*\n{symbol} {direction}\nError: {err_msg}")
 
 # ─── Main Loop ─────────────────────────────────────────────────────────────────
 
