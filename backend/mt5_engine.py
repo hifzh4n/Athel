@@ -452,6 +452,8 @@ def analyze_market(symbol):
             if status != "ACTIVE":
                 update_signal_status(sig_id, status)
                 del active_signals[sig_id]
+                # Reset direction lock so the same direction can fire again immediately
+                last_published_direction[symbol] = "NONE"
                 emoji = "✅" if status == "COMPLETED_TP" else "❌"
                 send_telegram_message(f"{emoji} *TRADE CLOSED* {emoji}\n\nSymbol: *{sig_data.get('symbol', symbol)}*\nDirection: *{direction}*\nResult: *{status}*\nClose Price: {current_live_price:.2f}")
 
@@ -524,9 +526,9 @@ def analyze_market(symbol):
         print(f"   -> [{symbol}] Skipping: already has an ACTIVE signal. Waiting for TP/SL.")
         return
 
-    # Skip if same direction as last signal after cooldown (deduplication)
-    if direction != "NONE" and direction == last_dir and cooldown_remaining == 0:
-        print(f"   -> [{symbol}] Skipping duplicate {direction} signal (same as last)")
+    # Skip if same direction as last signal AND still within cooldown window
+    if direction != "NONE" and direction == last_dir and cooldown_remaining > 0:
+        print(f"   -> [{symbol}] Cooldown + duplicate {direction} signal. Waiting...")
         return
 
     if direction == "NONE":
