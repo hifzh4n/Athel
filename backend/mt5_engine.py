@@ -452,8 +452,9 @@ def analyze_market(symbol):
             if status != "ACTIVE":
                 update_signal_status(sig_id, status)
                 del active_signals[sig_id]
-                # Reset direction lock so the same direction can fire again immediately
+                # Reset BOTH direction lock AND cooldown timer so next setup fires immediately
                 last_published_direction[symbol] = "NONE"
+                last_published_time[symbol] = 0
                 emoji = "✅" if status == "COMPLETED_TP" else "❌"
                 send_telegram_message(f"{emoji} *TRADE CLOSED* {emoji}\n\nSymbol: *{sig_data.get('symbol', symbol)}*\nDirection: *{direction}*\nResult: *{status}*\nClose Price: {current_live_price:.2f}")
 
@@ -509,7 +510,9 @@ def analyze_market(symbol):
     last_dir = last_published_direction.get(symbol, "NONE")
     
     time_since_last  = current_time - last_time
-    cooldown_remaining = max(0, int(300 - time_since_last))  # 5-min cooldown for scalping
+    # 60s spam guard only — prevents same signal firing 10x on the same candle.
+    # This resets to 0 instantly when a trade closes.
+    cooldown_remaining = max(0, int(60 - time_since_last))
 
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {symbol}: {current_close:.2f} | ATR:{current_atr:.1f} | MTF:{trend_m5[0]}/{trend_m15[0]}/{trend_h1[0]}/{trend_h4[0]} | RSI:{current_rsi:.1f} | MACD_X:{'B' if macd_bullish_cross else ('S' if macd_bearish_cross else '-')} | BUY:{buy_score}/8 SELL:{sell_score}/8 -> {direction}")
 
@@ -534,13 +537,13 @@ def analyze_market(symbol):
     if direction == "NONE":
         return
 
-    # ── SCALPING SL/TP REWRITE (Fast closes, tighter stops) ──────────────
-    # SL = 1.2x ATR (Very tight, stops out fast on noise)
-    # TP1 = 1.5x ATR (Quick partial profit)
-    # TP2 = 3.0x ATR (Scalping runner)
-    sl_distance  = round(current_atr * 1.2, 2)
-    tp1_distance = round(current_atr * 1.5, 2)
-    tp2_distance = round(current_atr * 3.0, 2)
+    # ── SCALPING SL/TP — Tight & Fast ────────────────────────────────────────
+    # SL  = 0.5x ATR  (tight, exit fast if wrong)
+    # TP1 = 0.8x ATR  (quick win, ~1:1.6 RR)
+    # TP2 = 1.5x ATR  (runner for strong momentum)
+    sl_distance  = round(current_atr * 0.5, 2)
+    tp1_distance = round(current_atr * 0.8, 2)
+    tp2_distance = round(current_atr * 1.5, 2)
     entry_price  = current_close
 
     if direction == "BUY":
