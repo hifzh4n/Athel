@@ -17,9 +17,18 @@ export default function AdminPage() {
   const secondsAgo = Math.floor((Date.now() - (lastPriceUpdate || 0)) / 1000);
   const isEngineOnline = lastPriceUpdate > 0 && secondsAgo < 120; // 2 minutes
 
-  const totalSignals = signals.length;
-  const totalTP = signals.filter(s => s.status === "COMPLETED_TP").length;
-  const totalSL = signals.filter(s => s.status === "COMPLETED_SL").length;
+  const isToday = (dateString?: string) => {
+    if (!dateString) return false;
+    const date = new Date(dateString);
+    const today = new Date();
+    return date.getDate() === today.getDate() && 
+           date.getMonth() === today.getMonth() && 
+           date.getFullYear() === today.getFullYear();
+  };
+
+  const todaySignals = signals.filter(s => isToday(s.createdAt) || isToday(s.updatedAt));
+  const totalTP = todaySignals.filter(s => s.status === "COMPLETED_TP").length;
+  const totalSL = todaySignals.filter(s => s.status === "COMPLETED_SL").length;
   const winRate = totalTP + totalSL > 0 ? Math.round((totalTP / (totalTP + totalSL)) * 100) : 0;
 
   const formatSecondsAgo = (s: number) => {
@@ -37,11 +46,11 @@ export default function AdminPage() {
       {/* Stats Row */}
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-5">
         {[
-          { label: "Total Signals", value: totalSignals, icon: Activity, color: "text-primary" },
+          { label: "Total Signals (All Time)", value: signals.length, icon: Activity, color: "text-primary" },
           { label: "Active Now", value: activeSignals.length, icon: Clock, color: "text-primary" },
-          { label: "Win Rate", value: `${winRate}%`, icon: CheckCircle2, color: "text-blue-400" },
-          { label: "TP Wins", value: totalTP, icon: TrendingUp, color: "text-emerald-400" },
-          { label: "SL Losses", value: totalSL, icon: TrendingDown, color: "text-red-400" },
+          { label: "Today's Win Rate", value: `${winRate}%`, icon: CheckCircle2, color: "text-blue-400" },
+          { label: "Today's TP", value: totalTP, icon: TrendingUp, color: "text-emerald-400" },
+          { label: "Today's SL", value: totalSL, icon: TrendingDown, color: "text-red-400" },
         ].map((stat) => (
           <div key={stat.label} className="glass-panel rounded-xl p-4 flex items-center gap-3">
             <stat.icon className={`w-8 h-8 ${stat.color} shrink-0`} />
