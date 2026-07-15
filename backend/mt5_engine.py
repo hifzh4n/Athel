@@ -294,7 +294,7 @@ def get_gemini_analysis(symbol, direction, price, rsi, macd_hist, mtf_trends, co
 
     prompt = f"Act as a professional forex trader. A {direction} setup was detected for {symbol} at ${price:.2f}. "
     prompt += f"RSI={rsi:.1f}, MACD Histogram={macd_hist:.4f}. "
-    prompt += f"Timeframe trends: M5={mtf_trends['M5']}, H1={mtf_trends['H1']}. "
+    prompt += f"Timeframe trends: M15={mtf_trends['M15']}, H1={mtf_trends['H1']}, H4={mtf_trends['H4']}. "
     prompt += f"{confluences} out of 8 confluence factors aligned. "
     prompt += f"ATR (volatility) = {atr:.2f}. "
     
@@ -363,46 +363,48 @@ def analyze_market(symbol):
     if not is_valid_trading_session(symbol):
         return
 
-    # ── SCALPING ARCHITECTURE: M1 Entry + M5 Trend + H1 Macro ───────────────────
-    # M1  → Entry signals: MACD, RSI, EMA, ATR, ADX (fast, tight SL/TP)
-    # M5  → Intermediate trend: SuperTrend, EMA50 (noise filter)
-    # H1  → Macro alignment: don't fight the big trend
-    df_m1 = get_data(symbol, mt5.TIMEFRAME_M1,  150)
-    df_m5 = get_data(symbol, mt5.TIMEFRAME_M5,  100)
-    df_h1 = get_data(symbol, mt5.TIMEFRAME_H1,  100)
+    # ── SNIPER ARCHITECTURE: M15 Entry + H1/H4 Macro ───────────────────
+    # M15 → Entry signals: MACD, RSI, EMA, ATR, ADX
+    # H1  → Macro alignment
+    # H4  → Grand Macro alignment
+    df_m15 = get_data(symbol, mt5.TIMEFRAME_M15, 150)
+    df_h1  = get_data(symbol, mt5.TIMEFRAME_H1,  100)
+    df_h4  = get_data(symbol, mt5.TIMEFRAME_H4,  100)
 
-    if df_m1 is None or df_m5 is None or df_h1 is None:
+    if df_m15 is None or df_h1 is None or df_h4 is None:
         print("Warning: Failed to fetch one or more timeframes. Skipping cycle.")
         return
 
     # Use the last CLOSED candle (not the live forming candle)
     IDX = -2
 
-    # ── Trend context from M5 and H1 ─────────────────────────────────────────
-    df_m5['ema50'] = ta.ema(df_m5['close'], length=50)
+    # ── Trend context from H1 and H4 ─────────────────────────────────────────
     df_h1['ema50'] = ta.ema(df_h1['close'], length=50)
+    df_h4['ema50'] = ta.ema(df_h4['close'], length=50)
 
-    trend_m5 = "BULLISH" if float(df_m5['close'].iloc[IDX]) > float(df_m5['ema50'].iloc[IDX]) else "BEARISH"
     trend_h1 = "BULLISH" if float(df_h1['close'].iloc[IDX]) > float(df_h1['ema50'].iloc[IDX]) else "BEARISH"
-    mtf_trends = {"M1": "—", "M5": trend_m5, "H1": trend_h1, "H4": "—"}
+    trend_h4 = "BULLISH" if float(df_h4['close'].iloc[IDX]) > float(df_h4['ema50'].iloc[IDX]) else "BEARISH"
 
-    # ── SuperTrend on M5 (trend direction filter, less noisy than M1) ────────
-    st_df = ta.supertrend(df_m5['high'], df_m5['low'], df_m5['close'], length=10, multiplier=3.0)
+    # ── SuperTrend on M15 (trend direction filter) ────────
+    st_df = ta.supertrend(df_m15['high'], df_m15['low'], df_m15['close'], length=10, multiplier=3.0)
 
-    # ── All entry indicators on M1 (fast scalp signals) ──────────────────────
-    df_m1['ema20'] = ta.ema(df_m1['close'], length=20)
-    df_m1['ema50'] = ta.ema(df_m1['close'], length=50)
-    df_m1['rsi']   = ta.rsi(df_m1['close'], length=14)
-    macd_df        = ta.macd(df_m1['close'], fast=12, slow=26, signal=9)
+    # ── All entry indicators on M15 (strict signals) ──────────────────────
+    df_m15['ema20'] = ta.ema(df_m15['close'], length=20)
+    df_m15['ema50'] = ta.ema(df_m15['close'], length=50)
+    df_m15['rsi']   = ta.rsi(df_m15['close'], length=14)
+    macd_df         = ta.macd(df_m15['close'], fast=12, slow=26, signal=9)
 
-    # ── ATR + ADX on M1 (tight SL/TP, trend strength) ────────────────────────
-    df_m1['atr'] = ta.atr(df_m1['high'], df_m1['low'], df_m1['close'], length=14)
-    current_atr   = float(df_m1['atr'].iloc[IDX])
+    trend_m15 = "BULLISH" if float(df_m15['close'].iloc[IDX]) > float(df_m15['ema50'].iloc[IDX]) else "BEARISH"
+    mtf_trends = {"M15": trend_m15, "H1": trend_h1, "H4": trend_h4}
 
-    adx_df      = ta.adx(df_m1['high'], df_m1['low'], df_m1['close'], length=14)
+    # ── ATR + ADX on M15 ────────────────────────
+    df_m15['atr'] = ta.atr(df_m15['high'], df_m15['low'], df_m15['close'], length=14)
+    current_atr   = float(df_m15['atr'].iloc[IDX])
+
+    adx_df      = ta.adx(df_m15['high'], df_m15['low'], df_m15['close'], length=14)
     current_adx = float(adx_df.iloc[IDX, 0]) if adx_df is not None and len(adx_df.columns) > 0 else 0
 
-    # ── MACD Crossover on M1 ──────────────────────────────────────────────────
+    # ── MACD Crossover on M15 ──────────────────────────────────────────────────
     macd_hist_prev   = float(macd_df.iloc[-3, 1])
     macd_hist_closed = float(macd_df.iloc[IDX, 1])
     macd_bullish_cross = macd_hist_prev <= 0 and macd_hist_closed > 0
@@ -410,21 +412,17 @@ def analyze_market(symbol):
     macd_bullish_accel = macd_hist_closed > macd_hist_prev and macd_hist_closed > 0
     macd_bearish_accel = macd_hist_closed < macd_hist_prev and macd_hist_closed < 0
 
-    current_close  = float(df_m1['close'].iloc[IDX])
-    current_ema20  = float(df_m1['ema20'].iloc[IDX])
-    current_ema50  = float(df_m1['ema50'].iloc[IDX])
-    current_rsi    = float(df_m1['rsi'].iloc[IDX])
-    current_st_dir = float(st_df.iloc[IDX, 1])   # SuperTrend direction from M5
+    current_close  = float(df_m15['close'].iloc[IDX])
+    current_ema20  = float(df_m15['ema20'].iloc[IDX])
+    current_ema50  = float(df_m15['ema50'].iloc[IDX])
+    current_rsi    = float(df_m15['rsi'].iloc[IDX])
+    current_st_dir = float(st_df.iloc[IDX, 1])   # SuperTrend direction from M15
 
-
-    # ── FIX #7: Volatility Filter ─────────────────────────────────────────────
-    # ATR too low = dead market (wide spread eats profit)
-    # ATR too high = explosive/news spike (unpredictable, dangerous)
-    # NOTE: These fixed values are tuned for XAUUSD. Synthetic indices have massive ATRs.
+    # ── Volatility Filter ─────────────────────────────────────────────
+    # NOTE: Tuned for XAUUSD M15
     if "XAU" in symbol.upper() or "GOLD" in symbol.upper():
-        # M1 timeframe has much smaller candles than M5, so ATR limits must be lowered.
-        ATR_MIN = 0.5
-        ATR_MAX = 8.0
+        ATR_MIN = 1.0
+        ATR_MAX = 15.0
         if current_atr < ATR_MIN or current_atr > ATR_MAX:
             print(f"   -> [{symbol}] ATR={current_atr:.2f} outside safe range [{ATR_MIN}-{ATR_MAX}]. Skipping.")
             return
@@ -517,59 +515,53 @@ def analyze_market(symbol):
     av_sentiment   = get_alpha_vantage_sentiment()
     sentiment_label = av_sentiment['label'] if av_sentiment else "Neutral"
 
-    # 3. Detect New Setups — 8-factor confluence system
-    # ── FIX #5: MACD crossover used instead of raw histogram ─────────────────
-    # ── FIX #6: H4 EMA50 trend added as 8th factor ───────────────────────────
-    # ── SCALPING FILTER: Only require H1 macro alignment (removed H4) ────────
-    is_macro_bullish = trend_h1 == "BULLISH"
-    is_macro_bearish = trend_h1 == "BEARISH"
+    # 3. Detect New Setups — Sniper Strategy
+    is_macro_bullish = trend_h1 == "BULLISH" and trend_h4 == "BULLISH"
+    is_macro_bearish = trend_h1 == "BEARISH" and trend_h4 == "BEARISH"
 
-    # ── SUPERTREND FILTER: Strict Buy/Sell Zones ──────────────────────────────
     is_st_bullish = (current_st_dir == 1.0)
     is_st_bearish = (current_st_dir == -1.0)
 
-    # ── Pullback Filter: price must be within 2.0x ATR of EMA20 ───────────────
-    # M1 ATR is very small, so 1.0x is too tight. 2.0x allows normal breathing room.
-    dist_to_ema20 = abs(current_close - current_ema20)
-    is_near_ema20 = dist_to_ema20 <= (current_atr * 2.0)
+    # ── Pullback Filter: price must be within 1.0x ATR of EMA50 ───────────────
+    # Golden Zone: Buy only at deep pullbacks to the M15 EMA50
+    dist_to_ema50 = abs(current_close - current_ema50)
+    is_near_ema50 = dist_to_ema50 <= (current_atr * 1.0)
 
     buy_score = 0
-    if current_close > current_ema50: buy_score += 1          # Price above M5 EMA50
-    if current_ema20 > current_ema50: buy_score += 1          # EMA20 > EMA50 (bullish structure)
-    if 35 < current_rsi < 70:         buy_score += 1          # RSI in healthy buy zone
-    if macd_bullish_cross:             buy_score += 1          # MACD histogram positive
-    if macd_bullish_accel:             buy_score += 1          # MACD accelerating upward
-    if trend_m5  == "BULLISH":         buy_score += 1          # M5  micro-trend aligned
-    if "Bullish" in sentiment_label:   buy_score += 1          # Macro news aligned
+    if current_close > current_ema50: buy_score += 1
+    if current_ema20 > current_ema50: buy_score += 1
+    if 35 < current_rsi < 70:         buy_score += 1
+    if macd_bullish_accel:             buy_score += 1
+    if trend_m15 == "BULLISH":         buy_score += 1
+    if "Bullish" in sentiment_label:   buy_score += 1
 
     sell_score = 0
     if current_close < current_ema50: sell_score += 1
     if current_ema20 < current_ema50: sell_score += 1
     if 30 < current_rsi < 65:         sell_score += 1
-    if macd_bearish_cross:             sell_score += 1          # MACD histogram negative
-    if macd_bearish_accel:             sell_score += 1          # MACD accelerating downward
-    if trend_m5  == "BEARISH":         sell_score += 1
+    if macd_bearish_accel:             sell_score += 1
+    if trend_m15 == "BEARISH":         sell_score += 1
     if "Bearish" in sentiment_label:   sell_score += 1
 
-    # Require: Macro Alignment + SuperTrend + Pullback + at least 4/7 confluence factors
+    # Require: Macro Alignment + SuperTrend + Pullback + TRUE MACD Crossover
     direction  = "NONE"
     confluences = 0
-    if is_macro_bullish and is_st_bullish and is_near_ema20 and buy_score >= 4 and sell_score < buy_score:
+    if is_macro_bullish and is_st_bullish and is_near_ema50 and macd_bullish_cross and buy_score >= 4:
         direction   = "BUY"
-        confluences = buy_score + 2
-    elif is_macro_bearish and is_st_bearish and is_near_ema20 and sell_score >= 4 and sell_score > buy_score:
+        confluences = buy_score + 3
+    elif is_macro_bearish and is_st_bearish and is_near_ema50 and macd_bearish_cross and sell_score >= 4:
         direction   = "SELL"
-        confluences = sell_score + 2
+        confluences = sell_score + 3
 
     current_time     = time.time()
     last_time = last_published_time.get(symbol, 0)
     last_dir = last_published_direction.get(symbol, "NONE")
     
     time_since_last  = current_time - last_time
-    # 3-min cooldown between signals. Resets to 0 instantly when a trade closes.
+    # 3-min cooldown between signals
     cooldown_remaining = max(0, int(180 - time_since_last))
 
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {symbol}: {current_close:.2f} | ATR:{current_atr:.1f} | ADX:{current_adx:.1f} | MTF:-/{mtf_trends['M5'][0]}/{mtf_trends['H1'][0]}/- | ST:{'B' if is_st_bullish else ('S' if is_st_bearish else '-')} | PB:{'Y' if is_near_ema20 else 'N'} | RSI:{current_rsi:.1f} | MACD_X:{'B' if macd_bullish_cross else ('S' if macd_bearish_cross else '-')} | BUY:{buy_score}/8 SELL:{sell_score}/8 -> {direction}")
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] {symbol}: {current_close:.2f} | ATR:{current_atr:.1f} | ADX:{current_adx:.1f} | MTF:{mtf_trends['M15'][0]}/{mtf_trends['H1'][0]}/{mtf_trends['H4'][0]} | ST:{'B' if is_st_bullish else ('S' if is_st_bearish else '-')} | PB:{'Y' if is_near_ema50 else 'N'} | RSI:{current_rsi:.1f} | MACD_X:{'B' if macd_bullish_cross else ('S' if macd_bearish_cross else '-')} | BUY:{buy_score}/6 SELL:{sell_score}/6 -> {direction}")
 
     # Skip if cooldown active
     if direction != "NONE" and cooldown_remaining > 0:
@@ -592,13 +584,13 @@ def analyze_market(symbol):
     if direction == "NONE":
         return
 
-    # ── SCALPING SL/TP ─────────────────────────────────────────────────────
-    # SL  = 1.0x ATR  (enough room to breathe past candle noise)
-    # TP1 = 1.5x ATR  (positive RR 1:1.5, quick close)
-    # TP2 = 2.5x ATR  (runner if momentum is strong)
+    # ── SNIPER SL/TP ─────────────────────────────────────────────────────
+    # SL  = 1.0x ATR  (safely behind the entry candle)
+    # TP1 = 1.5x ATR  (high probability first target)
+    # TP2 = 3.0x ATR  (let the winner run)
     sl_distance  = round(current_atr * 1.0, 2)
     tp1_distance = round(current_atr * 1.5, 2)
-    tp2_distance = round(current_atr * 2.5, 2)
+    tp2_distance = round(current_atr * 3.0, 2)
     entry_price  = current_close
 
     if direction == "BUY":
