@@ -2,7 +2,7 @@ import MetaTrader5 as mt5
 import pandas as pd
 import pandas_ta as ta
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import os
 import requests
 from dotenv import load_dotenv
@@ -845,6 +845,103 @@ def reconcile_signals_with_mt5():
             emoji = "✅" if status == "COMPLETED_TP" else "❌"
             send_telegram_message(f"{emoji} *TRADE CLOSED (Reconciled)* {emoji}\n\nSymbol: *{symbol}*\nDirection: *{direction}*\nResult: *{status}*")
 
+# ─── MT5 History Sync ────────────────────────────────────────────────────────────
+
+_last_mt5_sync = 0  # timestamp of last MT5 history sync
+
+def sync_mt5_history_to_firebase():
+    """
+    Fetch ALL closed and open positions from MT5 and mirror them into Firebase.
+    Uses the MT5 position_id as the Firebase key so records are upserted (never duplicated).
+    This ensures the website dashboard always tallies perfectly with what happened in MT5.
+    """
+    global _last_mt5_sync
+    now = time.time()
+    # Only sync every 60 seconds to avoid spamming Firebase
+    if now - _last_mt5_sync < 60:
+        return
+    _last_mt5_sync = now
+
+    from_date = datetime.now(timezone.utc) - timedelta(days=7)  # Last 7 days
+    to_date   = datetime.now(timezone.utc)
+
+    deals = mt5.history_deals_get(from_date, to_date)
+    if deals is None:
+        return
+
+    # Group deals by position_id to reconstruct full trades
+    positions_map = {}
+    for deal in deals:
+        pid = deal.position_id
+        if pid not in positions_map:
+            positions_map[pid] = []
+        positions_map[pid].append(deal)
+
+    synced = 0
+    for pos_id, pos_deals in positions_map.items():
+        entry_deal = next((d for d in pos_deals if d.entry == mt5.DEAL_ENTRY_IN),  None)
+        exit_deal  = next((d for d in pos_deals if d.entry == mt5.DEAL_ENTRY_OUT), None)
+
+        if not entry_deal:
+            continue
+
+        symbol    = entry_deal.symbol
+        direction = "BUY" if entry_deal.type == mt5.DEAL_TYPE_BUY else "SELL"
+        entry_px  = entry_deal.price
+        volume    = entry_deal.volume
+        open_time = datetime.fromtimestamp(entry_deal.time, tz=timezone.utc).isoformat()
+        firebase_key = f"mt5_{pos_id}"
+
+        if exit_deal:
+            # ── CLOSED position ──
+            close_px   = exit_deal.price
+            profit     = round(exit_deal.profit + exit_deal.swap + exit_deal.commission, 2)
+            close_time = datetime.fromtimestamp(exit_deal.time, tz=timezone.utc).isoformat()
+
+            # Determine TP/SL based on actual profit
+            if profit > 0:
+                status = "COMPLETED_TP"
+            elif profit < 0:
+                status = "COMPLETED_SL"
+            else:
+                status = "COMPLETED_SL"  # Break-even counts as closed
+
+            payload = {
+                "symbol":     symbol,
+                "direction":  direction,
+                "status":     status,
+                "price":      entry_px,
+                "closePrice": close_px,
+                "profit":     profit,
+                "volume":     volume,
+                "createdAt":  open_time,
+                "updatedAt":  close_time,
+                "source":     "mt5_sync",
+                "ticket":     pos_id,
+            }
+        else:
+            # ── Still OPEN position ──
+            payload = {
+                "symbol":    symbol,
+                "direction": direction,
+                "status":    "ACTIVE",
+                "price":     entry_px,
+                "volume":    volume,
+                "createdAt": open_time,
+                "updatedAt": open_time,
+                "source":    "mt5_sync",
+                "ticket":    pos_id,
+            }
+
+        try:
+            requests.put(f"{FIREBASE_URL}/signals/{firebase_key}.json", json=payload, timeout=5)
+            synced += 1
+        except Exception as e:
+            print(f"   -> [MT5 SYNC] Firebase error for {symbol}: {e}")
+
+    if synced > 0:
+        print(f"   -> [MT5 SYNC] ✅ Synced {synced} positions from MT5 history to Firebase.")
+
 # ─── Main Loop ─────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -855,8 +952,11 @@ if __name__ == "__main__":
     while True:
         try:
             target_symbols = os.getenv("SYMBOLS", "XAUUSD").split(",")
-            # Reconcile Firebase state vs real MT5 open positions first
+            # 1. Sync MT5 trade history to Firebase (every 60s)
+            sync_mt5_history_to_firebase()
+            # 2. Reconcile active signals vs open MT5 positions
             reconcile_signals_with_mt5()
+            # 3. Analyze each symbol for new setups
             for sym in target_symbols:
                 analyze_market(sym.strip())
             consecutive_errors = 0
