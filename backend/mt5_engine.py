@@ -756,9 +756,9 @@ def place_auto_trade(symbol, direction, entry_price, stop_loss, take_profit1, at
 
     # Dynamically select filling mode supported by the broker for this symbol
     filling_type = mt5.ORDER_FILLING_IOC
-    if symbol_info.filling_mode & mt5.SYMBOL_FILLING_FOK:
+    if symbol_info.filling_mode & 1:  # 1 = FOK
         filling_type = mt5.ORDER_FILLING_FOK
-    elif symbol_info.filling_mode & mt5.SYMBOL_FILLING_IOC:
+    elif symbol_info.filling_mode & 2:  # 2 = IOC
         filling_type = mt5.ORDER_FILLING_IOC
     else:
         filling_type = mt5.ORDER_FILLING_RETURN
@@ -891,9 +891,9 @@ def enforce_strict_dollar_tp_sl():
             sym_info = mt5.symbol_info(pos.symbol)
             filling_type = mt5.ORDER_FILLING_IOC
             if sym_info:
-                if sym_info.filling_mode & mt5.SYMBOL_FILLING_FOK:
+                if sym_info.filling_mode & 1:
                     filling_type = mt5.ORDER_FILLING_FOK
-                elif sym_info.filling_mode & mt5.SYMBOL_FILLING_IOC:
+                elif sym_info.filling_mode & 2:
                     filling_type = mt5.ORDER_FILLING_IOC
                 else:
                     filling_type = mt5.ORDER_FILLING_RETURN
