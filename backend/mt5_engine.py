@@ -864,7 +864,8 @@ def enforce_strict_dollar_tp_sl():
         if pos.comment != "Athel AutoTrade":
             continue
 
-        total_profit = pos.profit + pos.swap + pos.commission
+        # MT5 positions have profit and swap, but commission is often not an attribute on open positions
+        total_profit = pos.profit + getattr(pos, 'swap', 0.0)
         if total_profit >= TARGET_TP_USD or total_profit <= TARGET_SL_USD:
             # Force close the position
             tick = mt5.symbol_info_tick(pos.symbol)
