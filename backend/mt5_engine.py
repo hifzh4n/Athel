@@ -625,22 +625,31 @@ def analyze_market(symbol):
     if direction == "NONE":
         return
 
-    # ── FIXED-DOLLAR SCALPING SL/TP ──────────────────────────────────────────
-    # Target: +$2.50 TP  |  -$2.00 SL  (per 0.01 lot)
-    # Dynamically computed using MT5 tick value so it's accurate for every symbol.
-    lot_size = float(os.getenv("AUTO_TRADE_LOT", "0.01"))
-    TARGET_TP_USD = 1.00
-    TARGET_SL_USD = 1.00
+    # ── ATR-BASED DYNAMIC SL/TP ───────────────────────────────────────────────
+    # SL  = 1.0x ATR below/above entry  (structure-based stop)
+    # TP1 = 1.5x ATR (minimum 1.5:1 RR)
+    # TP2 = 2.5x ATR (runner / extended target)
+    # Multipliers widen slightly for JPY pairs due to pip scale difference.
+    if "JPY" in symbol.upper():
+        sl_mult  = 1.2
+        tp1_mult = 1.8
+        tp2_mult = 3.0
+    elif "XAU" in symbol.upper() or "GOLD" in symbol.upper():
+        sl_mult  = 1.0
+        tp1_mult = 1.5
+        tp2_mult = 2.5
+    elif is_synthetic:
+        sl_mult  = 1.0
+        tp1_mult = 1.5
+        tp2_mult = 2.5
+    else:
+        sl_mult  = 1.0
+        tp1_mult = 1.5
+        tp2_mult = 2.5
 
-    tp1_distance = dollars_to_price_distance(symbol, lot_size, TARGET_TP_USD)
-    tp2_distance = dollars_to_price_distance(symbol, lot_size, TARGET_TP_USD * 2)  # $5 runner
-    sl_distance  = dollars_to_price_distance(symbol, lot_size, TARGET_SL_USD)
-
-    # Fallback to ATR-based if symbol info unavailable
-    if tp1_distance is None or sl_distance is None:
-        sl_distance  = round(current_atr * 1.0, 5)
-        tp1_distance = round(current_atr * 1.2, 5)
-        tp2_distance = round(current_atr * 2.0, 5)
+    sl_distance  = round(current_atr * sl_mult,  5)
+    tp1_distance = round(current_atr * tp1_mult, 5)
+    tp2_distance = round(current_atr * tp2_mult, 5)
 
     entry_price  = current_close
 
@@ -730,16 +739,18 @@ def place_auto_trade(symbol, direction, entry_price, stop_loss, take_profit1, at
     price      = tick.ask if direction == "BUY" else tick.bid
     deviation  = 20  # max slippage in points
 
-    # Recompute SL/TP from the LIVE fill price to prevent 'Invalid stops' errors.
-    # Using ATR-based distances anchored to the actual execution price.
-    sym_atr_sl  = round(atr * 1.0, symbol_info.digits)
-    sym_atr_tp1 = round(atr * 1.2, symbol_info.digits)
+    # Anchor SL/TP to the LIVE fill price using the same ATR distances computed
+    # during analysis (SL=1.0x ATR, TP1=1.5x ATR) so the executed trade matches
+    # exactly what was shown on the signal card.
+    atr_sl_dist  = round(abs(entry_price - stop_loss),   symbol_info.digits)
+    atr_tp1_dist = round(abs(take_profit1 - entry_price), symbol_info.digits)
+
     if direction == "BUY":
-        live_sl  = round(price - sym_atr_sl,  symbol_info.digits)
-        live_tp1 = round(price + sym_atr_tp1, symbol_info.digits)
+        live_sl  = round(price - atr_sl_dist,  symbol_info.digits)
+        live_tp1 = round(price + atr_tp1_dist, symbol_info.digits)
     else:
-        live_sl  = round(price + sym_atr_sl,  symbol_info.digits)
-        live_tp1 = round(price - sym_atr_tp1, symbol_info.digits)
+        live_sl  = round(price + atr_sl_dist,  symbol_info.digits)
+        live_tp1 = round(price - atr_tp1_dist, symbol_info.digits)
 
     # Ensure minimum stop distance respected by broker
     min_stop = symbol_info.trade_stops_level * symbol_info.point
@@ -1034,8 +1045,6 @@ if __name__ == "__main__":
     while True:
         try:
             target_symbols = os.getenv("SYMBOLS", "XAUUSD").split(",")
-            # 0. Force close any trades that hit $1 profit/loss right now
-            enforce_strict_dollar_tp_sl()
             # 1. Sync MT5 trade history to Firebase (every 60s)
             sync_mt5_history_to_firebase()
             # 2. Reconcile active signals vs open MT5 positions
