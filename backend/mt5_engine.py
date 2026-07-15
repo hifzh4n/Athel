@@ -348,11 +348,26 @@ def calculate_confidence_and_grade(confluences):
 
 def calculate_rr(entry, sl, tp1):
     """Calculate actual Risk/Reward ratio."""
-    risk = abs(entry - sl)
+    risk   = abs(entry - sl)
     reward = abs(tp1 - entry)
-    if risk == 0:
-        return 0.0
-    return round(reward / risk, 2)
+    return round(reward / risk, 2) if risk > 0 else 0
+
+def dollars_to_price_distance(symbol, lot, target_dollars):
+    """
+    Convert a target profit/loss in USD to a price distance for the given symbol and lot size.
+    Uses MT5's tick_value and tick_size so it works correctly for all assets
+    (Gold, Forex, Synthetics, JPY pairs, etc.)
+    Returns the price distance (e.g. 2.50 for XAUUSD, 0.025 for USDJPY at $2.50 target).
+    """
+    info = mt5.symbol_info(symbol)
+    if not info or info.trade_tick_size == 0:
+        # Fallback: use ATR-based rough estimate
+        return None
+    # Dollar value per 1 price unit movement for given lot size
+    dollar_per_point = (info.trade_tick_value / info.trade_tick_size) * lot
+    if dollar_per_point == 0:
+        return None
+    return round(target_dollars / dollar_per_point, info.digits)
 
 # ─── Core Analysis ─────────────────────────────────────────────────────────────
 
@@ -607,25 +622,35 @@ def analyze_market(symbol):
     if direction == "NONE":
         return
 
-    # ── SCALPING SL/TP ─────────────────────────────────────────────────────
-    # SL  = 1.0x ATR  (tight, behind M5 entry candle)
-    # TP1 = 1.2x ATR  (quick first target, high hit rate)
-    # TP2 = 2.0x ATR  (runner if momentum continues)
-    sl_distance  = round(current_atr * 1.0, 5)
-    tp1_distance = round(current_atr * 1.2, 5)
-    tp2_distance = round(current_atr * 2.0, 5)
+    # ── FIXED-DOLLAR SCALPING SL/TP ──────────────────────────────────────────
+    # Target: +$2.50 TP  |  -$2.00 SL  (per 0.01 lot)
+    # Dynamically computed using MT5 tick value so it's accurate for every symbol.
+    lot_size = float(os.getenv("AUTO_TRADE_LOT", "0.01"))
+    TARGET_TP_USD = 2.50
+    TARGET_SL_USD = 2.00
+
+    tp1_distance = dollars_to_price_distance(symbol, lot_size, TARGET_TP_USD)
+    tp2_distance = dollars_to_price_distance(symbol, lot_size, TARGET_TP_USD * 2)  # $5 runner
+    sl_distance  = dollars_to_price_distance(symbol, lot_size, TARGET_SL_USD)
+
+    # Fallback to ATR-based if symbol info unavailable
+    if tp1_distance is None or sl_distance is None:
+        sl_distance  = round(current_atr * 1.0, 5)
+        tp1_distance = round(current_atr * 1.2, 5)
+        tp2_distance = round(current_atr * 2.0, 5)
+
     entry_price  = current_close
 
     if direction == "BUY":
-        stop_loss    = entry_price - sl_distance
-        take_profit1 = entry_price + tp1_distance
-        take_profit2 = entry_price + tp2_distance
+        stop_loss    = round(entry_price - sl_distance,  5)
+        take_profit1 = round(entry_price + tp1_distance, 5)
+        take_profit2 = round(entry_price + tp2_distance, 5)
         entry_low    = entry_price - (current_atr * 0.2)
         entry_high   = entry_price + (current_atr * 0.1)
     else:
-        stop_loss    = entry_price + sl_distance
-        take_profit1 = entry_price - tp1_distance
-        take_profit2 = entry_price - tp2_distance
+        stop_loss    = round(entry_price + sl_distance,  5)
+        take_profit1 = round(entry_price - tp1_distance, 5)
+        take_profit2 = round(entry_price - tp2_distance, 5)
         entry_low    = entry_price - (current_atr * 0.1)
         entry_high   = entry_price + (current_atr * 0.2)
 
